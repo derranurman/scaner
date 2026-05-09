@@ -22,11 +22,21 @@ class ProductSeeder extends Seeder
                 ],
             ],
             [
+                'name' => 'Stir Racing Sparco R13',
+                'sku' => 'STIR-SPR',
+                'description' => 'Stir racing import Sparco R13" Universal.',
+                'variants' => [
+                    ['name' => 'Hitam', 'sku' => 'STIR-SPR-BLK', 'stock' => 20, 'min_stock' => 3],
+                    ['name' => 'Merah', 'sku' => 'STIR-SPR-RED', 'stock' => 15, 'min_stock' => 3],
+                ],
+            ],
+            [
                 'name' => 'Boskit Motor',
                 'sku' => 'BSK-MTR',
                 'description' => 'Boskit motor universal.',
                 'variants' => [
                     ['name' => 'Standar', 'sku' => 'BSK-MTR-STD', 'stock' => 40, 'min_stock' => 5],
+                    ['name' => 'Ferio',   'sku' => 'BSK-MTR-FER', 'stock' => 25, 'min_stock' => 5],
                 ],
             ],
             [

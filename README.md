@@ -16,7 +16,9 @@ Sistem manajemen stok & scan resi untuk penjual TikTok Shop.
 
 - Auth + 2 role: **admin** dan **packing**
 - CRUD **Produk** + **Varian** (multi-varian: warna, ukuran, dll)
-- **Import CSV** pesanan dari TikTok Shop (template tersedia)
+- **Import PDF Label** — upload langsung PDF label TikTok (bulk multi-halaman), parse otomatis resi/alamat/produk, dengan preview sebelum simpan
+- **Combo Mapping** — teks bundle di label (`Stir+Bosskit`) otomatis dipecah jadi multiple SKU saat scan
+- **Import CSV** sebagai alternatif (template tersedia)
 - **Scan resi** pakai kamera HP (html5-qrcode) atau scanner USB (keyboard wedge)
 - **Auto-kurangi stok** saat resi dikonfirmasi packed (transaksi atomic + lockForUpdate)
 - **Stock movement log** (setiap mutasi stok dicatat)
@@ -72,17 +74,43 @@ php artisan serve   # terminal 2 (http://localhost:8000)
 
 ## Cara Pakai
 
-### 1. Import Pesanan TikTok
+## Import Pesanan
 
-1. Dari TikTok Seller Center, **Export** pesanan ke file CSV / Excel.
-2. Buka `Import CSV` di web → download **Template CSV** sebagai referensi kolom.
-3. Sesuaikan kolom CSV Anda dengan template:
-   ```
-   tiktok_order_id, resi_number, courier, buyer_name, buyer_phone,
-   shipping_address, order_date, product_name, variant_name, sku, quantity
-   ```
-   **Kolom wajib:** `resi_number`, `quantity`. `sku` sangat dianjurkan agar stok bisa terkurangi otomatis.
-4. Upload. Satu resi dengan banyak baris akan digabung menjadi satu pesanan dengan banyak item.
+Ada dua cara:
+
+### A. Import PDF Label (direkomendasikan)
+
+TikTok Seller Center biasanya menyediakan download bulk label PDF. Upload langsung file PDF-nya:
+
+1. Admin → menu **Import → Import PDF Label**
+2. Upload 1 PDF (boleh berisi banyak halaman, 1 halaman = 1 resi)
+3. Parser otomatis deteksi: resi, Order ID, pembeli, alamat, berat, tanggal, dan barang
+4. Halaman **Pratinjau** muncul — cek hasil parse:
+   - Hijau = SKU/nama cocok dengan master produk
+   - Biru = nama produk cocok (perkiraan)
+   - Ungu = di-expand oleh Combo Mapping
+   - Merah = belum ke-mapping, perlu setup dulu di **Combo Mapping**
+5. Centang yang mau disimpan → **Simpan Pesanan yang Dicentang**
+
+#### Combo Mapping
+
+Label TikTok sering menuliskan item bundle, contoh: `Barang : Sparco Hitam, Stir+Bosskit`. Ini bisa dipecah otomatis jadi banyak produk di stok:
+
+| Keyword (yang muncul di label) | Dipecah jadi |
+|---|---|
+| `Stir+Bosskit` | Stir Sparco Hitam ×1 + Boskit Standar ×1 |
+| `+Bosskit Ferio` | Boskit Ferio ×1 |
+
+Setelah mapping dibuat (Admin → **Combo Mapping** → **+ Mapping Baru**), saat scan resi nanti stok KEDUA varian otomatis berkurang.
+
+### B. Import CSV
+
+Kalau TikTok hanya kasih export Excel/CSV:
+
+1. Admin → menu **Import → Import CSV**
+2. Download template CSV → sesuaikan kolom → upload
+3. Kolom wajib: `resi_number`, `quantity`
+4. SKU disesuaikan dengan master produk
 
 ### 2. Scan Resi (Packing)
 
