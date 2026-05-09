@@ -96,19 +96,16 @@
                                                 @if ($item['variant_name']) — {{ $item['variant_name'] }} @endif
                                                 @if ($item['sku']) <span class="text-xs text-gray-400 font-mono ml-1">{{ $item['sku'] }}</span> @endif
                                             </span>
-                                            @switch($item['source'] ?? 'unmatched')
-                                                @case('combo')
-                                                    <span class="badge bg-indigo-100 text-indigo-700">combo</span>
-                                                    @break
-                                                @case('sku')
-                                                    <span class="badge bg-green-100 text-green-700">SKU match</span>
-                                                    @break
-                                                @case('name')
-                                                    <span class="badge bg-sky-100 text-sky-700">nama match</span>
-                                                    @break
-                                                @default
-                                                    <span class="badge bg-red-100 text-red-700">perlu mapping</span>
-                                            @endswitch
+                                            @php($source = $item['source'] ?? 'unmatched')
+                                            @if ($source === 'combo')
+                                                <span class="badge bg-indigo-100 text-indigo-700">combo</span>
+                                            @elseif ($source === 'sku')
+                                                <span class="badge bg-green-100 text-green-700">SKU match</span>
+                                            @elseif ($source === 'name')
+                                                <span class="badge bg-sky-100 text-sky-700">nama match</span>
+                                            @else
+                                                <span class="badge bg-red-100 text-red-700">perlu mapping</span>
+                                            @endif
                                         </li>
                                     @endforeach
                                 </ul>

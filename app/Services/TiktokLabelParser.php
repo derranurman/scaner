@@ -65,20 +65,121 @@ class TiktokLabelParser
      */
     public function parseSinglePage(string $text, int $pageNumber = 1): array
     {
+        $lines = array_values(array_filter(
+            array_map('trim', explode("\n", $text)),
+            fn ($l) => $l !== ''
+        ));
+
+        $fields = $this->walkLines($lines);
+
         return [
             'page' => $pageNumber,
             'raw_text' => $text,
             'resi_number' => $this->extractResi($text),
             'tiktok_order_id' => $this->extractOrderId($text),
             'courier' => $this->extractCourier($text),
-            'buyer_name' => $this->extractBuyerName($text),
-            'buyer_phone' => $this->extractBuyerPhone($text),
-            'shipping_address' => $this->extractAddress($text),
-            'weight' => $this->extractWeight($text),
-            'order_date' => $this->extractShipDate($text),
-            'barang_keyword' => $this->extractBarangKeyword($text),
+            'buyer_name' => $fields['buyer_name'],
+            'buyer_phone' => $fields['buyer_phone'],
+            'shipping_address' => $fields['shipping_address'],
+            'weight' => $fields['weight'],
+            'order_date' => $fields['order_date'],
+            'barang_keyword' => $fields['barang_keyword'],
             'product_rows' => $this->extractProductRows($text),
             'seller_note' => $this->extractSellerNote($text),
+        ];
+    }
+
+    /**
+     * Berjalan baris-per-baris, mengisi field ketika anchor ditemukan.
+     * Ini lebih tahan banting dibanding regex multiline.
+     *
+     * @param array<int, string> $lines
+     * @return array<string, ?string>
+     */
+    private function walkLines(array $lines): array
+    {
+        $buyerName = null;
+        $buyerPhone = null;
+        $addressParts = [];
+        $weight = null;
+        $orderDate = null;
+        $barangKeyword = null;
+
+        $mode = null; // 'address' aktif setelah "Penerima :" sampai ketemu Weight/Jumlah/dll
+
+        foreach ($lines as $line) {
+            // --- Penerima: nama + HP (bisa di satu baris)
+            if (preg_match('/^Penerima\s*[:\-]\s*(.*)$/i', $line, $m)) {
+                $rest = trim($m[1]);
+                if (preg_match('/(\(\+?62\)[\d\*\-\s]{5,30})/', $rest, $mm)) {
+                    $buyerPhone = trim($mm[1]);
+                    $buyerName = trim(str_replace($mm[0], '', $rest));
+                } else {
+                    $buyerName = $rest ?: null;
+                }
+                if ($buyerName === '') {
+                    $buyerName = null;
+                }
+                $mode = 'address';
+                continue;
+            }
+
+            // --- Weight [+ Ship di baris yang sama]
+            if (preg_match('/Weight\s*[:\-]\s*([\d\.,]+\s*(?:KG|kg|g))/i', $line, $m)) {
+                $weight = trim($m[1]);
+                if (preg_match('/Ship\s*[:\-]\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i', $line, $m2)) {
+                    $orderDate = $this->normalizeDate($m2[1]);
+                }
+                $mode = null;
+                continue;
+            }
+
+            if (preg_match('/^Ship\s*[:\-]\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i', $line, $m)) {
+                $orderDate = $this->normalizeDate($m[1]);
+                $mode = null;
+                continue;
+            }
+
+            // --- Jumlah : Npcs, Barang : <KEYWORD>
+            if (preg_match('/Barang\s*[:\-]\s*(.+)$/i', $line, $m)) {
+                $barangKeyword = trim($m[1]);
+                $mode = null;
+                continue;
+            }
+
+            // --- Anchor-anchor lain yang meng-cancel mode "address"
+            if (preg_match('/^(Pengirim|Weight|Ship|Jumlah|JL\s*\.|Order\s*Id|In transit|Product\s*Name|Qty\s*Total|Seller\s*Note|Syarat\s+dan\s+ketentuan)\b/i', $line)) {
+                $mode = null;
+                continue;
+            }
+
+            // --- Baris alamat (antara Penerima dan Weight/Jumlah/dll)
+            if ($mode === 'address') {
+                if (preg_match('/^J[XP]\d{8,}$/', $line)) {
+                    continue; // nomor resi
+                }
+                if (preg_match('/^\d{3}-[A-Z0-9]{2,}-\d+[A-Z]?$/i', $line)) {
+                    continue; // kode sortir
+                }
+                if (preg_match('/^\d{1,4}$/', $line)) {
+                    continue; // angka kode
+                }
+
+                $addressParts[] = $line;
+                if (count($addressParts) >= 3) {
+                    $mode = null;
+                }
+                continue;
+            }
+        }
+
+        return [
+            'buyer_name' => $buyerName,
+            'buyer_phone' => $buyerPhone,
+            'shipping_address' => $addressParts ? implode(', ', $addressParts) : null,
+            'weight' => $weight,
+            'order_date' => $orderDate,
+            'barang_keyword' => $barangKeyword,
         ];
     }
 
@@ -127,71 +228,6 @@ class TiktokLabelParser
         return 'JNT';
     }
 
-    private function extractBuyerName(string $text): ?string
-    {
-        // "Penerima : <Nama>   (+62)..."
-        if (preg_match('/Penerima\s*[:\-]\s*([^\n(]+?)\s*\(\+?62/i', $text, $m)) {
-            return trim($m[1]);
-        }
-
-        // Tanpa nomor HP di baris yang sama
-        if (preg_match('/Penerima\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
-            return trim($m[1]);
-        }
-
-        return null;
-    }
-
-    private function extractBuyerPhone(string $text): ?string
-    {
-        if (preg_match('/Penerima[^\n]*?(\(\+?62\)[\d\*\-\s]+)/i', $text, $m)) {
-            return trim($m[1]);
-        }
-        // Kadang HP ada di baris berikutnya
-        if (preg_match('/(\(\+?62\)[\d\*\-\s]{6,20})/i', $text, $m)) {
-            return trim($m[1]);
-        }
-
-        return null;
-    }
-
-    private function extractAddress(string $text): ?string
-    {
-        // Ambil 2 baris setelah "Penerima : ..." (baris provinsi/kota, lalu detail jalan)
-        if (! preg_match('/Penerima\s*[:\-][^\n]*\n([^\n]+)\n([^\n]+)/i', $text, $m)) {
-            return null;
-        }
-
-        $line1 = trim($m[1]);   // JAWA TIMUR,MALANG,KEDUNGKANDANG
-        $line2 = trim($m[2]);   // jl.jengkol bumiayu no 16 ,pagar hitam
-
-        // Buang garis "Weight" / kode sortir JL . XXXX (dengan dot/spasi), pertahankan "jl.xxx" alamat
-        if (preg_match('/^(Weight|Berat|Ship)\b/i', $line2)
-            || preg_match('/^JL\s*\.\s*[A-Z]/', $line2)) {
-            return $line1;
-        }
-
-        return trim($line1.' — '.$line2, ' —');
-    }
-
-    private function extractWeight(string $text): ?string
-    {
-        if (preg_match('/Weight\s*[:\-]\s*([\d\.,]+\s*(?:KG|kg|g))/i', $text, $m)) {
-            return trim($m[1]);
-        }
-
-        return null;
-    }
-
-    private function extractShipDate(string $text): ?string
-    {
-        if (preg_match('/Ship\s*[:\-]\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i', $text, $m)) {
-            return $this->normalizeDate($m[1]);
-        }
-
-        return null;
-    }
-
     private function normalizeDate(string $raw): ?string
     {
         $raw = str_replace('/', '-', trim($raw));
@@ -205,19 +241,6 @@ class TiktokLabelParser
         }
 
         return sprintf('%04d-%02d-%02d', (int) $y, (int) $m, (int) $d);
-    }
-
-    /**
-     * Teks di baris "Jumlah : Npcs, Barang : <KEYWORD>"
-     * Ini yang dipakai sebagai kunci combo mapping.
-     */
-    private function extractBarangKeyword(string $text): ?string
-    {
-        if (preg_match('/Barang\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
-            return trim($m[1]);
-        }
-
-        return null;
     }
 
     /**
