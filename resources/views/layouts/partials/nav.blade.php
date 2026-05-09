@@ -1,0 +1,77 @@
+@php $user = auth()->user(); @endphp
+<nav x-data="{ open: false }" class="bg-white border-b border-gray-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex h-16 justify-between">
+            <div class="flex items-center gap-6">
+                <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
+                    <div class="h-8 w-8 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">S</div>
+                    <span class="font-semibold text-gray-900">Scaner Toko</span>
+                </a>
+
+                <div class="hidden md:flex items-center gap-1">
+                    @if ($user?->isAdmin())
+                        <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">Dashboard</x-nav-link>
+                        <x-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-nav-link>
+                        <x-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*') && !request()->routeIs('orders.import*')">Pesanan</x-nav-link>
+                        <x-nav-link :href="route('orders.import.show')" :active="request()->routeIs('orders.import*')">Import CSV</x-nav-link>
+                        <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
+                        <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.*')">Laporan</x-nav-link>
+                        <x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">User</x-nav-link>
+                    @elseif ($user?->isPacking())
+                        <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
+                    @endif
+                </div>
+            </div>
+
+            <div class="hidden md:flex items-center gap-3">
+                @auth
+                    <div class="text-right text-sm leading-tight">
+                        <div class="font-medium">{{ $user->name }}</div>
+                        <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
+                    </div>
+                    <form method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button type="submit" class="btn-secondary">Logout</button>
+                    </form>
+                @endauth
+            </div>
+
+            <div class="md:hidden flex items-center">
+                <button @click="open = !open" class="p-2 rounded-md text-gray-600 hover:bg-gray-100">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path x-show="!open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                        <path x-show="open" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="open" class="md:hidden border-t border-gray-200">
+        <div class="px-4 py-3 space-y-1">
+            @if ($user?->isAdmin())
+                <x-responsive-nav-link :href="route('dashboard')">Dashboard</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('products.index')">Produk</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('orders.index')">Pesanan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('orders.import.show')">Import CSV</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('scan.index')">Scan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('reports.packing')">Laporan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('users.index')">User</x-responsive-nav-link>
+            @elseif ($user?->isPacking())
+                <x-responsive-nav-link :href="route('scan.index')">Scan</x-responsive-nav-link>
+            @endif
+            @auth
+                <div class="pt-3 border-t mt-2 text-sm">
+                    <div class="px-3 pb-2">
+                        <div class="font-medium">{{ $user->name }}</div>
+                        <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
+                    </div>
+                    <form method="POST" action="{{ route('logout') }}" class="px-3">
+                        @csrf
+                        <button type="submit" class="btn-secondary w-full">Logout</button>
+                    </form>
+                </div>
+            @endauth
+        </div>
+    </div>
+</nav>
