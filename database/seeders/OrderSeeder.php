@@ -27,15 +27,6 @@ class OrderSeeder extends Seeder
                     ['sku' => 'BSK-MTR-STD', 'qty' => 1],
                 ],
             ],
-            [
-                'resi' => 'JP0000000003',
-                'buyer' => 'Andi Wijaya',
-                'items' => [
-                    ['sku' => 'STIR-SKL-BLU', 'qty' => 2],
-                    ['sku' => 'BSK-MTR-STD', 'qty' => 1],
-                    ['sku' => 'SPN-BE-BLK', 'qty' => 1],
-                ],
-            ],
         ];
 
         foreach ($samples as $sample) {

@@ -13,7 +13,21 @@
                         <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">Dashboard</x-nav-link>
                         <x-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-nav-link>
                         <x-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*') && !request()->routeIs('orders.import*')">Pesanan</x-nav-link>
-                        <x-nav-link :href="route('orders.import.show')" :active="request()->routeIs('orders.import*')">Import CSV</x-nav-link>
+                        <div x-data="{ open: false }" class="relative">
+                            <button @click="open = !open" @click.outside="open = false"
+                                    class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-700 hover:bg-gray-50 inline-flex items-center gap-1
+                                           {{ request()->routeIs('orders.import*') ? 'bg-indigo-50 text-indigo-700' : '' }}">
+                                Import
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                            <div x-show="open" x-transition class="absolute mt-1 w-48 rounded-md bg-white shadow-lg border border-gray-200 z-20">
+                                <a href="{{ route('orders.import.pdf.show') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Import PDF Label</a>
+                                <a href="{{ route('orders.import.show') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Import CSV</a>
+                                <a href="{{ route('combo_mappings.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t">Combo Mapping</a>
+                            </div>
+                        </div>
                         <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
                         <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.*')">Laporan</x-nav-link>
                         <x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">User</x-nav-link>
@@ -53,7 +67,9 @@
                 <x-responsive-nav-link :href="route('dashboard')">Dashboard</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('products.index')">Produk</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.index')">Pesanan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('orders.import.pdf.show')">Import PDF</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.import.show')">Import CSV</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('combo_mappings.index')">Combo Mapping</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('scan.index')">Scan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('reports.packing')">Laporan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('users.index')">User</x-responsive-nav-link>

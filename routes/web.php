@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\ComboMappingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderImportController;
 use App\Http\Controllers\PackingReportController;
+use App\Http\Controllers\PdfImportController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ScanController;
 use App\Http\Controllers\UserController;
@@ -52,6 +54,19 @@ Route::middleware('auth')->group(function () {
         Route::get('orders-import', [OrderImportController::class, 'show'])->name('orders.import.show');
         Route::post('orders-import', [OrderImportController::class, 'import'])->name('orders.import');
         Route::get('orders-import/template', [OrderImportController::class, 'template'])->name('orders.import.template');
+
+        // Import PDF label
+        Route::get('orders-import-pdf', [PdfImportController::class, 'show'])->name('orders.import.pdf.show');
+        Route::post('orders-import-pdf', [PdfImportController::class, 'upload'])->name('orders.import.pdf.upload');
+        Route::get('orders-import-pdf/{draft}', [PdfImportController::class, 'preview'])->name('orders.import.pdf.preview');
+        Route::post('orders-import-pdf/{draft}/commit', [PdfImportController::class, 'commit'])->name('orders.import.pdf.commit');
+        Route::delete('orders-import-pdf/{draft}', [PdfImportController::class, 'discard'])->name('orders.import.pdf.discard');
+
+        // Combo Mapping
+        Route::resource('combo-mappings', ComboMappingController::class)
+            ->parameters(['combo-mappings' => 'combo_mapping'])
+            ->names('combo_mappings')
+            ->except(['show']);
 
         // Reports
         Route::get('reports/packing', [PackingReportController::class, 'index'])->name('reports.packing');
