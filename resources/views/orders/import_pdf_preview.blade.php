@@ -2,8 +2,8 @@
 @section('title', 'Pratinjau Import PDF')
 
 @section('content')
-    @php($header = 'Pratinjau Import PDF')
-    @php($subheader = 'Cek hasil parse untuk tiap halaman. Centang yang ingin disimpan.')
+    <?php $header = 'Pratinjau Import PDF'; ?>
+    <?php $subheader = 'Cek hasil parse untuk tiap halaman. Centang yang ingin disimpan.'; ?>
 
     <div class="card mb-6">
         <div class="flex flex-wrap gap-4 items-center justify-between text-sm">
@@ -14,7 +14,8 @@
             <div class="flex gap-2">
                 <form method="POST" action="{{ route('orders.import.pdf.discard', $draft) }}"
                       onsubmit="return confirm('Buang draft ini? Tidak akan disimpan sebagai pesanan.');">
-                    @csrf @method('DELETE')
+                    @csrf
+                    @method('DELETE')
                     <button class="btn-secondary" type="submit">Buang Draft</button>
                 </form>
             </div>
@@ -38,14 +39,19 @@
         </div>
 
         <div class="space-y-4">
-            @foreach ($draft->parsed_orders as $idx => $entry)
-                @php
-                    $hasUnmatched = collect($entry['items'])->contains(fn ($i) => ($i['source'] ?? null) === 'unmatched' || empty($i['variant_id']));
+            <?php foreach ($draft->parsed_orders as $idx => $entry): ?>
+                <?php
+                    $hasUnmatched = false;
+                    foreach ($entry['items'] as $it) {
+                        if (($it['source'] ?? null) === 'unmatched' || empty($it['variant_id'])) {
+                            $hasUnmatched = true;
+                            break;
+                        }
+                    }
                     $rowClass = $hasUnmatched
                         ? 'border-red-200 bg-red-50/40'
                         : ($entry['already_exists'] ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white');
-                @endphp
-
+                ?>
                 <div class="rounded-xl border {{ $rowClass }} p-4">
                     <div class="flex flex-wrap items-start gap-3">
                         <label class="pt-1">
@@ -53,75 +59,84 @@
                                    class="item-check rounded border-gray-300 h-4 w-4"
                                    {{ $hasUnmatched ? '' : 'checked' }}>
                         </label>
+
                         <div class="flex-1 min-w-[280px]">
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 flex-wrap">
                                 <span class="text-xs text-gray-500">Hal. {{ $entry['page'] }}</span>
                                 <span class="font-mono text-lg font-bold">{{ $entry['resi_number'] ?: '—' }}</span>
-                                @if ($entry['already_exists'])
-                                    <span class="badge bg-amber-100 text-amber-700">Sudah ada · akan update</span>
-                                @endif
-                                @if ($entry['matched_keyword'])
+                                <?php if ($entry['already_exists']): ?>
+                                    <span class="badge bg-amber-100 text-amber-700">Sudah ada &middot; akan update</span>
+                                <?php endif; ?>
+                                <?php if ($entry['matched_keyword']): ?>
                                     <span class="badge bg-indigo-100 text-indigo-700">Combo: {{ $entry['matched_keyword'] }}</span>
-                                @endif
+                                <?php endif; ?>
                             </div>
                             <div class="text-sm text-gray-700 mt-1">
                                 {{ $entry['buyer_name'] ?? '—' }}
-                                @if ($entry['buyer_phone']) · <span class="text-gray-500">{{ $entry['buyer_phone'] }}</span> @endif
+                                <?php if (!empty($entry['buyer_phone'])): ?>
+                                    &middot; <span class="text-gray-500">{{ $entry['buyer_phone'] }}</span>
+                                <?php endif; ?>
                             </div>
                             <div class="text-xs text-gray-500">{{ $entry['shipping_address'] ?? '—' }}</div>
                             <div class="text-xs text-gray-400 mt-1">
-                                Order ID: {{ $entry['tiktok_order_id'] ?? '—' }} ·
-                                {{ $entry['courier'] }} ·
-                                {{ $entry['weight'] ?? '—' }} ·
+                                Order ID: {{ $entry['tiktok_order_id'] ?? '—' }} &middot;
+                                {{ $entry['courier'] }} &middot;
+                                {{ $entry['weight'] ?? '—' }} &middot;
                                 {{ $entry['order_date'] ?? '—' }}
                             </div>
-                            @if ($entry['barang_keyword'])
+                            <?php if (!empty($entry['barang_keyword'])): ?>
                                 <div class="text-xs text-gray-500 mt-1">
                                     Barang di label: <span class="font-mono">{{ $entry['barang_keyword'] }}</span>
                                 </div>
-                            @endif
+                            <?php endif; ?>
                         </div>
 
                         <div class="flex-1 min-w-[280px]">
                             <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Item Setelah Resolusi</div>
-                            @if (empty($entry['items']))
+                            <?php if (empty($entry['items'])): ?>
                                 <div class="text-xs text-red-600">Tidak ada item terdeteksi.</div>
-                            @else
+                            <?php else: ?>
                                 <ul class="text-sm divide-y">
-                                    @foreach ($entry['items'] as $item)
-                                        <li class="py-1 flex items-center gap-2">
-                                            <span class="badge bg-gray-100 text-gray-700">{{ $item['quantity'] }}×</span>
+                                    <?php foreach ($entry['items'] as $item): ?>
+                                        <?php
+                                            $source = $item['source'] ?? 'unmatched';
+                                            $sourceBadge = match ($source) {
+                                                'combo' => ['combo', 'bg-indigo-100 text-indigo-700'],
+                                                'sku'   => ['SKU match', 'bg-green-100 text-green-700'],
+                                                'name'  => ['nama match', 'bg-sky-100 text-sky-700'],
+                                                default => ['perlu mapping', 'bg-red-100 text-red-700'],
+                                            };
+                                        ?>
+                                        <li class="py-1 flex items-center gap-2 flex-wrap">
+                                            <span class="badge bg-gray-100 text-gray-700">{{ $item['quantity'] }}&times;</span>
                                             <span class="flex-1">
                                                 <span class="font-medium">{{ $item['product_name'] }}</span>
-                                                @if ($item['variant_name']) — {{ $item['variant_name'] }} @endif
-                                                @if ($item['sku']) <span class="text-xs text-gray-400 font-mono ml-1">{{ $item['sku'] }}</span> @endif
+                                                <?php if (!empty($item['variant_name'])): ?>
+                                                    &mdash; {{ $item['variant_name'] }}
+                                                <?php endif; ?>
+                                                <?php if (!empty($item['sku'])): ?>
+                                                    <span class="text-xs text-gray-400 font-mono ml-1">{{ $item['sku'] }}</span>
+                                                <?php endif; ?>
                                             </span>
-                                            @php($source = $item['source'] ?? 'unmatched')
-                                            @if ($source === 'combo')
-                                                <span class="badge bg-indigo-100 text-indigo-700">combo</span>
-                                            @elseif ($source === 'sku')
-                                                <span class="badge bg-green-100 text-green-700">SKU match</span>
-                                            @elseif ($source === 'name')
-                                                <span class="badge bg-sky-100 text-sky-700">nama match</span>
-                                            @else
-                                                <span class="badge bg-red-100 text-red-700">perlu mapping</span>
-                                            @endif
+                                            <span class="badge {{ $sourceBadge[1] }}">{{ $sourceBadge[0] }}</span>
                                         </li>
-                                    @endforeach
+                                    <?php endforeach; ?>
                                 </ul>
-                            @endif
+                            <?php endif; ?>
 
-                            @if (! empty($entry['warnings']))
+                            <?php if (!empty($entry['warnings'])): ?>
                                 <div class="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                                     <ul class="list-disc list-inside">
-                                        @foreach ($entry['warnings'] as $w) <li>{{ $w }}</li> @endforeach
+                                        <?php foreach ($entry['warnings'] as $w): ?>
+                                            <li>{{ $w }}</li>
+                                        <?php endforeach; ?>
                                     </ul>
                                 </div>
-                            @endif
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
-            @endforeach
+            <?php endforeach; ?>
         </div>
 
         <div class="mt-6 flex justify-end gap-2">
@@ -131,8 +146,10 @@
     </form>
 
     <script>
-        document.getElementById('select-all').addEventListener('change', (e) => {
-            document.querySelectorAll('.item-check').forEach(c => c.checked = e.target.checked);
+        document.getElementById('select-all').addEventListener('change', function (e) {
+            document.querySelectorAll('.item-check').forEach(function (c) {
+                c.checked = e.target.checked;
+            });
         });
     </script>
 @endsection
