@@ -61,6 +61,7 @@ Route::middleware('auth')->group(function () {
         Route::get('orders-import-pdf/{draft}', [PdfImportController::class, 'preview'])->name('orders.import.pdf.preview');
         Route::post('orders-import-pdf/{draft}/commit', [PdfImportController::class, 'commit'])->name('orders.import.pdf.commit');
         Route::delete('orders-import-pdf/{draft}', [PdfImportController::class, 'discard'])->name('orders.import.pdf.discard');
+        Route::delete('orders-import-pdf/{draft}/destroy', [PdfImportController::class, 'destroy'])->name('orders.import.pdf.destroy');
 
         // Combo Mapping
         Route::resource('combo-mappings', ComboMappingController::class)

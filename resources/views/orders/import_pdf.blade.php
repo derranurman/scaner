@@ -63,12 +63,15 @@
                                     @endif
                                 </td>
                                 <td class="py-2 text-xs">{{ $d->created_at->format('d M H:i') }}</td>
-                                <td class="py-2 text-right">
+                                <td class="py-2 text-right whitespace-nowrap">
                                     @if ($d->status === 'draft')
-                                        <a href="{{ route('orders.import.pdf.preview', $d) }}" class="text-indigo-600 hover:underline">Lanjutkan</a>
-                                    @else
-                                        <span class="text-gray-400">—</span>
+                                        <a href="{{ route('orders.import.pdf.preview', $d) }}" class="text-indigo-600 hover:underline mr-2">Lanjutkan</a>
                                     @endif
+                                    <form method="POST" action="{{ route('orders.import.pdf.destroy', $d) }}" class="inline"
+                                          onsubmit="return confirm('Hapus draft {{ $d->original_filename }} secara permanen? Data tidak bisa dikembalikan.');">
+                                        @csrf @method('DELETE')
+                                        <button type="submit" class="text-red-600 hover:underline">Hapus</button>
+                                    </form>
                                 </td>
                             </tr>
                         @endforeach

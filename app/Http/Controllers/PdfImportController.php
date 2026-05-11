@@ -176,4 +176,11 @@ class PdfImportController extends Controller
 
         return redirect()->route('orders.import.pdf.show')->with('success', 'Draft dibuang.');
     }
+
+    public function destroy(PdfParseDraft $draft): RedirectResponse
+    {
+        $draft->delete();
+
+        return redirect()->route('orders.import.pdf.show')->with('success', 'Draft dihapus permanen.');
+    }
 }
