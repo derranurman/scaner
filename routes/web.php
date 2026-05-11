@@ -7,8 +7,10 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderImportController;
 use App\Http\Controllers\PackingReportController;
 use App\Http\Controllers\PdfImportController;
+use App\Http\Controllers\PlatformDeductionController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ScanController;
+use App\Http\Controllers\StockInController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VariantController;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +46,16 @@ Route::middleware('auth')->group(function () {
         Route::put('variants/{variant}', [VariantController::class, 'update'])->name('variants.update');
         Route::delete('variants/{variant}', [VariantController::class, 'destroy'])->name('variants.destroy');
         Route::post('variants/{variant}/adjust', [VariantController::class, 'adjust'])->name('variants.adjust');
+
+        // Input Barang Masuk (bulk stock-in)
+        Route::get('stock-in', [StockInController::class, 'create'])->name('stock_in.create');
+        Route::post('stock-in', [StockInController::class, 'store'])->name('stock_in.store');
+
+        // Kelola Potongan Platform
+        Route::resource('platform-deductions', PlatformDeductionController::class)
+            ->parameters(['platform-deductions' => 'platform_deduction'])
+            ->names('platform_deductions')
+            ->except(['show']);
 
         // Orders
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');

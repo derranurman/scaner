@@ -66,6 +66,8 @@
             @if ($user?->isAdmin())
                 <x-responsive-nav-link :href="route('dashboard')">Dashboard</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('products.index')">Produk</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('stock_in.create')">+ Input Barang Masuk</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('platform_deductions.index')">Kelola Potongan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.index')">Pesanan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.import.pdf.show')">Import PDF</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.import.show')">Import CSV</x-responsive-nav-link>
