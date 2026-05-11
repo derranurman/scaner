@@ -9,6 +9,7 @@ use App\Http\Controllers\PackingReportController;
 use App\Http\Controllers\PdfImportController;
 use App\Http\Controllers\PlatformDeductionController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductReportController;
 use App\Http\Controllers\ScanController;
 use App\Http\Controllers\StockInController;
 use App\Http\Controllers\UserController;
@@ -84,6 +85,7 @@ Route::middleware('auth')->group(function () {
         // Reports
         Route::get('reports/packing', [PackingReportController::class, 'index'])->name('reports.packing');
         Route::get('reports/packing/export', [PackingReportController::class, 'export'])->name('reports.packing.export');
+        Route::get('reports/products', [ProductReportController::class, 'index'])->name('reports.products');
 
         // Users
         Route::resource('users', UserController::class)->except(['show']);

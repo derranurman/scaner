@@ -11,7 +11,22 @@
                 <div class="hidden md:flex items-center gap-1">
                     @if ($user?->isAdmin())
                         <x-nav-link :href="route('dashboard')" :active="request()->routeIs('dashboard')">Dashboard</x-nav-link>
-                        <x-nav-link :href="route('products.index')" :active="request()->routeIs('products.*')">Produk</x-nav-link>
+                        <div x-data="{ open: false }" class="relative">
+                            <button @click="open = !open" @click.outside="open = false"
+                                    class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-700 hover:bg-gray-50 inline-flex items-center gap-1
+                                           {{ request()->routeIs('products.*') || request()->routeIs('stock_in.*') || request()->routeIs('platform_deductions.*') || request()->routeIs('reports.products') ? 'bg-indigo-50 text-indigo-700' : '' }}">
+                                Produk
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                            <div x-show="open" x-transition class="absolute mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 z-20">
+                                <a href="{{ route('products.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Produk</a>
+                                <a href="{{ route('stock_in.create') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Input Barang Masuk</a>
+                                <a href="{{ route('platform_deductions.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Kelola Potongan</a>
+                                <a href="{{ route('reports.products') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t">Laporan Produk</a>
+                            </div>
+                        </div>
                         <x-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*') && !request()->routeIs('orders.import*')">Pesanan</x-nav-link>
                         <div x-data="{ open: false }" class="relative">
                             <button @click="open = !open" @click.outside="open = false"
@@ -29,7 +44,7 @@
                             </div>
                         </div>
                         <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
-                        <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.*')">Laporan</x-nav-link>
+                        <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.packing*')">Laporan</x-nav-link>
                         <x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">User</x-nav-link>
                     @elseif ($user?->isPacking())
                         <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
@@ -65,9 +80,12 @@
         <div class="px-4 py-3 space-y-1">
             @if ($user?->isAdmin())
                 <x-responsive-nav-link :href="route('dashboard')">Dashboard</x-responsive-nav-link>
+                <div class="px-3 pt-2 pb-1 text-xs uppercase text-gray-400">Produk</div>
                 <x-responsive-nav-link :href="route('products.index')">Produk</x-responsive-nav-link>
-                <x-responsive-nav-link :href="route('stock_in.create')">+ Input Barang Masuk</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('stock_in.create')">Input Barang Masuk</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('platform_deductions.index')">Kelola Potongan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('reports.products')">Laporan Produk</x-responsive-nav-link>
+                <div class="px-3 pt-2 pb-1 text-xs uppercase text-gray-400">Pesanan</div>
                 <x-responsive-nav-link :href="route('orders.index')">Pesanan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.import.pdf.show')">Import PDF</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.import.show')">Import CSV</x-responsive-nav-link>

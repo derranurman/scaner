@@ -10,29 +10,7 @@
                 <input name="q" value="{{ $q }}" placeholder="Cari nama / SKU / jenis / varian…" class="input md:max-w-xs">
                 <button class="btn-secondary" type="submit">Cari</button>
             </form>
-            <div class="flex items-center gap-2">
-                <a href="{{ route('products.create') }}" class="btn-primary">+ Produk Baru</a>
-                <div x-data="{ open: false }" class="relative">
-                    <button type="button" @click="open = !open" @click.outside="open = false"
-                            class="btn-secondary inline-flex items-center gap-1">
-                        Aksi
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-                    <div x-show="open" x-transition
-                         class="absolute right-0 mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 z-20">
-                        <a href="{{ route('stock_in.create') }}"
-                           class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                            + Input Barang Masuk
-                        </a>
-                        <a href="{{ route('platform_deductions.index') }}"
-                           class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t">
-                            Kelola Potongan
-                        </a>
-                    </div>
-                </div>
-            </div>
+            <a href="{{ route('products.create') }}" class="btn-primary">+ Produk Baru</a>
         </div>
 
         <div class="overflow-x-auto">
