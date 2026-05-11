@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\StockMovement;
-use App\Models\Variant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\View\View;
@@ -15,7 +14,7 @@ class ProductReportController extends Controller
     {
         [$from, $to, $productId, $type] = $this->filters($request);
 
-        // Ringkasan per produk: jumlah barang masuk & keluar dalam rentang
+        // Ringkasan per produk: total masuk / keluar / penyesuaian dalam rentang
         $summaryRows = StockMovement::query()
             ->selectRaw('variants.product_id, stock_movements.type, SUM(stock_movements.qty) as total_qty')
             ->join('variants', 'variants.id', '=', 'stock_movements.variant_id')
@@ -24,17 +23,38 @@ class ProductReportController extends Controller
             ->groupBy('variants.product_id', 'stock_movements.type')
             ->get();
 
+        // Bentuk ulang jadi array per product_id dengan field siap tampil.
         $summary = [];
         foreach ($summaryRows as $row) {
-            $pid = $row->product_id;
+            $pid = (int) $row->product_id;
             if (! isset($summary[$pid])) {
-                $summary[$pid] = ['in' => 0, 'out' => 0, 'adjustment' => 0];
+                $summary[$pid] = [
+                    'in' => 0,
+                    'out' => 0,
+                    'adjustment' => 0,
+                ];
             }
             $summary[$pid][$row->type] = (int) $row->total_qty;
         }
 
-        $productIds = array_keys($summary);
-        $productsMap = Product::whereIn('id', $productIds)->get()->keyBy('id');
+        // Sekalian hitung absolut & net supaya blade bersih (tidak ada logic).
+        $productsMap = Product::whereIn('id', array_keys($summary))->get()->keyBy('id');
+        $summaryTable = [];
+        foreach ($summary as $pid => $row) {
+            $in = (int) $row['in'];
+            $out = (int) $row['out'];
+            $adj = (int) $row['adjustment'];
+            $outAbs = abs($out);
+            $net = $in + $adj - $outAbs;
+
+            $summaryTable[] = [
+                'product_name' => $productsMap[$pid]->name ?? '—',
+                'in' => $in,
+                'out_abs' => $outAbs,
+                'adjustment' => $adj,
+                'net' => $net,
+            ];
+        }
 
         // Riwayat detail (paginate)
         $movements = StockMovement::query()
@@ -49,14 +69,13 @@ class ProductReportController extends Controller
         $products = Product::orderBy('name')->get(['id', 'name']);
 
         return view('reports.products', [
-            'summary' => $summary,
-            'productsMap' => $productsMap,
+            'summaryTable' => $summaryTable,
             'movements' => $movements,
             'products' => $products,
             'from' => $from->format('Y-m-d'),
             'to' => $to->format('Y-m-d'),
             'productId' => $productId,
-            'type' => $type,
+            'type' => (string) $type,
         ]);
     }
 

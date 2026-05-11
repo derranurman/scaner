@@ -2,8 +2,8 @@
 @section('title', 'Laporan Produk')
 
 @section('content')
-    @php($header = 'Laporan Produk')
-    @php($subheader = 'Pergerakan stok (barang masuk, keluar, penyesuaian) per produk.')
+    <?php $header = 'Laporan Produk'; ?>
+    <?php $subheader = 'Pergerakan stok (barang masuk, keluar, penyesuaian) per produk.'; ?>
 
     <div class="card">
         <form method="GET" class="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
@@ -19,18 +19,18 @@
                 <label class="label">Produk</label>
                 <select name="product_id" class="input">
                     <option value="">Semua produk</option>
-                    @foreach ($products as $p)
-                        <option value="{{ $p->id }}" @selected($productId == $p->id)>{{ $p->name }}</option>
-                    @endforeach
+                    <?php foreach ($products as $p): ?>
+                        <option value="{{ $p->id }}" <?php if ((int) $productId === (int) $p->id) echo 'selected'; ?>>{{ $p->name }}</option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <div>
                 <label class="label">Tipe</label>
                 <select name="type" class="input">
                     <option value="">Semua tipe</option>
-                    <option value="in"         @selected($type === 'in')>Barang Masuk</option>
-                    <option value="out"        @selected($type === 'out')>Barang Keluar</option>
-                    <option value="adjustment" @selected($type === 'adjustment')>Penyesuaian</option>
+                    <option value="in" <?php if ($type === 'in') echo 'selected'; ?>>Barang Masuk</option>
+                    <option value="out" <?php if ($type === 'out') echo 'selected'; ?>>Barang Keluar</option>
+                    <option value="adjustment" <?php if ($type === 'adjustment') echo 'selected'; ?>>Penyesuaian</option>
                 </select>
             </div>
             <div class="flex gap-2">
@@ -54,24 +54,30 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y">
-                    @forelse ($summary as $pid => $row)
-                        @php
-                            $net = $row['in'] + $row['adjustment'] - abs($row['out']);
-                            // out biasanya negatif (karena adjust -qty). Amankan dengan abs.
-                            $outAbs = abs($row['out']);
-                        @endphp
+                    <?php if (empty($summaryTable)): ?>
                         <tr>
-                            <td class="py-3 font-medium">{{ $productsMap[$pid]->name ?? '—' }}</td>
-                            <td class="py-3 text-right font-semibold text-green-600">+{{ number_format((int) $row['in']) }}</td>
-                            <td class="py-3 text-right font-semibold text-red-600">-{{ number_format($outAbs) }}</td>
-                            <td class="py-3 text-right text-gray-700">{{ $row['adjustment'] >= 0 ? '+' : '' }}{{ number_format((int) $row['adjustment']) }}</td>
-                            <td class="py-3 text-right font-semibold {{ $net >= 0 ? 'text-green-600' : 'text-red-600' }}">
-                                {{ $net >= 0 ? '+' : '' }}{{ number_format($net) }}
+                            <td colspan="5" class="py-6 text-center text-gray-500">
+                                Tidak ada pergerakan stok pada rentang ini.
                             </td>
                         </tr>
-                    @empty
-                        <tr><td colspan="5" class="py-6 text-center text-gray-500">Tidak ada pergerakan stok pada rentang ini.</td></tr>
-                    @endforelse
+                    <?php else: ?>
+                        <?php foreach ($summaryTable as $row): ?>
+                            <?php
+                                $netClass = $row['net'] >= 0 ? 'text-green-600' : 'text-red-600';
+                                $netPrefix = $row['net'] >= 0 ? '+' : '';
+                                $adjPrefix = $row['adjustment'] >= 0 ? '+' : '';
+                            ?>
+                            <tr>
+                                <td class="py-3 font-medium">{{ $row['product_name'] }}</td>
+                                <td class="py-3 text-right font-semibold text-green-600">+{{ number_format($row['in']) }}</td>
+                                <td class="py-3 text-right font-semibold text-red-600">-{{ number_format($row['out_abs']) }}</td>
+                                <td class="py-3 text-right text-gray-700">{{ $adjPrefix }}{{ number_format($row['adjustment']) }}</td>
+                                <td class="py-3 text-right font-semibold {{ $netClass }}">
+                                    {{ $netPrefix }}{{ number_format($row['net']) }}
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -85,7 +91,7 @@
                     <tr>
                         <th class="py-2">Waktu</th>
                         <th class="py-2">Tipe</th>
-                        <th class="py-2">Produk — Varian</th>
+                        <th class="py-2">Produk &mdash; Varian</th>
                         <th class="py-2">User</th>
                         <th class="py-2">Referensi</th>
                         <th class="py-2 text-right">Qty</th>
@@ -93,32 +99,47 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y">
-                    @forelse ($movements as $m)
+                    <?php if ($movements->isEmpty()): ?>
                         <tr>
-                            <td class="py-2 text-xs whitespace-nowrap">{{ $m->created_at->format('d M Y H:i') }}</td>
-                            <td class="py-2">
-                                @if ($m->type === 'in')
-                                    <span class="badge bg-green-100 text-green-700">Masuk</span>
-                                @elseif ($m->type === 'out')
-                                    <span class="badge bg-red-100 text-red-700">Keluar</span>
-                                @else
-                                    <span class="badge bg-gray-100 text-gray-600">Penyesuaian</span>
-                                @endif
-                            </td>
-                            <td class="py-2">
-                                <div class="font-medium">{{ $m->variant?->product?->name ?? '—' }}</div>
-                                <div class="text-xs text-gray-500">{{ $m->variant?->name }} <span class="font-mono">{{ $m->variant?->sku }}</span></div>
-                            </td>
-                            <td class="py-2 text-xs">{{ $m->user?->name ?? '—' }}</td>
-                            <td class="py-2 text-xs text-gray-600">{{ $m->reference ?? '—' }}</td>
-                            <td class="py-2 text-right font-semibold {{ $m->qty >= 0 ? 'text-green-600' : 'text-red-600' }}">
-                                {{ $m->qty >= 0 ? '+' : '' }}{{ number_format((int) $m->qty) }}
-                            </td>
-                            <td class="py-2 text-right">{{ number_format((int) $m->stock_after) }}</td>
+                            <td colspan="7" class="py-6 text-center text-gray-500">Tidak ada data.</td>
                         </tr>
-                    @empty
-                        <tr><td colspan="7" class="py-6 text-center text-gray-500">Tidak ada data.</td></tr>
-                    @endforelse
+                    <?php else: ?>
+                        <?php foreach ($movements as $m): ?>
+                            <?php
+                                $mType = $m->type;
+                                if ($mType === 'in') {
+                                    $typeBadge = ['Masuk', 'bg-green-100 text-green-700'];
+                                } elseif ($mType === 'out') {
+                                    $typeBadge = ['Keluar', 'bg-red-100 text-red-700'];
+                                } else {
+                                    $typeBadge = ['Penyesuaian', 'bg-gray-100 text-gray-600'];
+                                }
+                                $qty = (int) $m->qty;
+                                $qtyClass = $qty >= 0 ? 'text-green-600' : 'text-red-600';
+                                $qtyPrefix = $qty >= 0 ? '+' : '';
+                                $productName = $m->variant?->product?->name ?? '—';
+                                $variantName = $m->variant?->name ?? '';
+                                $variantSku = $m->variant?->sku ?? '';
+                                $userName = $m->user?->name ?? '—';
+                            ?>
+                            <tr>
+                                <td class="py-2 text-xs whitespace-nowrap">{{ $m->created_at->format('d M Y H:i') }}</td>
+                                <td class="py-2">
+                                    <span class="badge {{ $typeBadge[1] }}">{{ $typeBadge[0] }}</span>
+                                </td>
+                                <td class="py-2">
+                                    <div class="font-medium">{{ $productName }}</div>
+                                    <div class="text-xs text-gray-500">{{ $variantName }} <span class="font-mono">{{ $variantSku }}</span></div>
+                                </td>
+                                <td class="py-2 text-xs">{{ $userName }}</td>
+                                <td class="py-2 text-xs text-gray-600">{{ $m->reference ?? '—' }}</td>
+                                <td class="py-2 text-right font-semibold {{ $qtyClass }}">
+                                    {{ $qtyPrefix }}{{ number_format($qty) }}
+                                </td>
+                                <td class="py-2 text-right">{{ number_format((int) $m->stock_after) }}</td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
