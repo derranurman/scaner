@@ -77,40 +77,52 @@ class ParsedOrderResolver
             }
         }
 
-        // ---- Strategi 1b: Seller Note juga dicek sebagai combo mapping tambahan
-        //      Contoh: Seller Note "+Bosskit Ferio (T2)" → mapping "+Bosskit Ferio"
-        //      Items dari seller_note di-APPEND (bukan replace) ke items yang sudah ada.
+        // ---- Strategi 1b: Seller Note juga dicek sebagai combo mapping tambahan.
+        //      Match SEMUA keyword yang cocok (bukan hanya yang pertama),
+        //      supaya keyword pendek seperti "T2" bisa ketangkap di samping
+        //      keyword panjang seperti "+Bosskit Ferio".
+        //      Contoh:
+        //        Seller Note: "+Bosskit Ferio (T2)"
+        //        Keyword di DB: "+Bosskit Ferio", "T2"
+        //        Match: kedua-duanya → stok Boskit Ferio + stok varian T2 dikurangi
         $sellerNote = trim((string) ($parsed['seller_note'] ?? ''));
         if ($sellerNote !== '') {
-            $noteCombo = $this->findCombo($sellerNote);
-            if ($noteCombo && (! $combo || $noteCombo->id !== $combo->id)) {
+            $alreadyUsedComboIds = $combo ? [$combo->id] : [];
+            $noteCombos = $this->findAllCombos($sellerNote, $alreadyUsedComboIds);
+
+            if (! empty($noteCombos)) {
                 $orderQty = $this->totalQtyFromRows($parsed['product_rows'] ?? []);
                 if ($orderQty <= 0) {
                     $orderQty = 1;
                 }
 
-                foreach ($noteCombo->items as $ci) {
-                    $v = $ci->variant;
-                    if (! $v) {
-                        $warnings[] = "Combo '{$noteCombo->keyword}' (dari Seller Note) memiliki item yang referensinya sudah terhapus.";
-                        continue;
+                foreach ($noteCombos as $noteCombo) {
+                    foreach ($noteCombo->items as $ci) {
+                        $v = $ci->variant;
+                        if (! $v) {
+                            $warnings[] = "Combo '{$noteCombo->keyword}' (dari Seller Note) memiliki item yang referensinya sudah terhapus.";
+                            continue;
+                        }
+                        $items[] = [
+                            'product_name' => $v->product?->name ?? '—',
+                            'variant_name' => $v->name,
+                            'sku' => $v->sku,
+                            'variant_id' => $v->id,
+                            'quantity' => $ci->quantity * $orderQty,
+                            'source' => 'combo',
+                            'matched_keyword' => $noteCombo->keyword.' (Seller Note)',
+                        ];
                     }
-                    $items[] = [
-                        'product_name' => $v->product?->name ?? '—',
-                        'variant_name' => $v->name,
-                        'sku' => $v->sku,
-                        'variant_id' => $v->id,
-                        'quantity' => $ci->quantity * $orderQty,
-                        'source' => 'combo',
-                        'matched_keyword' => $noteCombo->keyword.' (Seller Note)',
-                    ];
+
+                    if (! $matchedKeyword) {
+                        $matchedKeyword = $noteCombo->keyword.' (Seller Note)';
+                    } else {
+                        $matchedKeyword .= ' + '.$noteCombo->keyword.' (Note)';
+                    }
                 }
 
-                if (! $matchedKeyword) {
-                    $matchedKeyword = $noteCombo->keyword.' (Seller Note)';
-                } else {
-                    $matchedKeyword .= ' + '.$noteCombo->keyword.' (Note)';
-                }
+                // Merge items yang variant_id-nya sama (biar tidak double-potong stok)
+                $items = $this->mergeItemsByVariant($items);
             }
         }
 
@@ -236,5 +248,92 @@ class ParsedOrderResolver
         }
 
         return null;
+    }
+
+    /**
+     * Cari SEMUA combo mapping yang keyword-nya cocok dengan $candidate.
+     * Berguna untuk seller note yang bisa mengandung banyak keyword sekaligus.
+     *
+     * @param array<int, int> $excludeIds ID mapping yang mau diskip
+     * @return array<int, ComboMapping>
+     */
+    private function findAllCombos(string $candidate, array $excludeIds = []): array
+    {
+        $candidate = trim($candidate);
+        if ($candidate === '') {
+            return [];
+        }
+
+        $mappings = ComboMapping::with('items.variant.product')->get();
+        $matches = [];
+
+        foreach ($mappings as $mapping) {
+            if (in_array($mapping->id, $excludeIds, true)) {
+                continue;
+            }
+
+            $keyword = trim($mapping->keyword);
+            if ($keyword === '') {
+                continue;
+            }
+
+            if ($this->keywordMatches($candidate, $keyword)) {
+                $matches[] = $mapping;
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
+     * Cek keyword cocok di dalam candidate. Untuk keyword pendek (<=3 char),
+     * pakai word-boundary supaya keyword "T2" tidak false-match "T23" atau "T20".
+     */
+    private function keywordMatches(string $candidate, string $keyword): bool
+    {
+        // Keyword panjang (>=4 char): substring case-insensitive biasa.
+        if (mb_strlen($keyword) >= 4) {
+            return mb_stripos($candidate, $keyword) !== false
+                || mb_stripos($keyword, $candidate) !== false;
+        }
+
+        // Keyword pendek: harus berdiri di word-boundary.
+        //   - huruf/digit sebelum-sesudah keyword harus bukan alphanumeric
+        //   - contoh: "T2" cocok di "Ferio (T2)" tapi TIDAK cocok di "T23"
+        $pattern = '/(?<![A-Za-z0-9])'.preg_quote($keyword, '/').'(?![A-Za-z0-9])/iu';
+
+        return preg_match($pattern, $candidate) === 1;
+    }
+
+    /**
+     * Gabung item dengan variant_id yang sama supaya stok tidak double-potong.
+     * Kalau 2 combo mapping nunjuk ke varian yang sama, qty-nya dijumlah dan
+     * matched_keyword-nya digabung.
+     *
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function mergeItemsByVariant(array $items): array
+    {
+        $merged = [];
+
+        foreach ($items as $item) {
+            $key = $item['variant_id'] ?? spl_object_hash((object) $item);
+
+            if (! isset($merged[$key])) {
+                $merged[$key] = $item;
+                continue;
+            }
+
+            $merged[$key]['quantity'] += $item['quantity'];
+
+            $existingKeyword = $merged[$key]['matched_keyword'] ?? '';
+            $newKeyword = $item['matched_keyword'] ?? '';
+            if ($newKeyword && ! str_contains((string) $existingKeyword, $newKeyword)) {
+                $merged[$key]['matched_keyword'] = trim($existingKeyword.' + '.$newKeyword, ' +');
+            }
+        }
+
+        return array_values($merged);
     }
 }
