@@ -75,7 +75,47 @@ class ParsedOrderResolver
                     'matched_keyword' => $combo->keyword,
                 ];
             }
+        }
 
+        // ---- Strategi 1b: Seller Note juga dicek sebagai combo mapping tambahan
+        //      Contoh: Seller Note "+Bosskit Ferio (T2)" → mapping "+Bosskit Ferio"
+        //      Items dari seller_note di-APPEND (bukan replace) ke items yang sudah ada.
+        $sellerNote = trim((string) ($parsed['seller_note'] ?? ''));
+        if ($sellerNote !== '') {
+            $noteCombo = $this->findCombo($sellerNote);
+            if ($noteCombo && (! $combo || $noteCombo->id !== $combo->id)) {
+                $orderQty = $this->totalQtyFromRows($parsed['product_rows'] ?? []);
+                if ($orderQty <= 0) {
+                    $orderQty = 1;
+                }
+
+                foreach ($noteCombo->items as $ci) {
+                    $v = $ci->variant;
+                    if (! $v) {
+                        $warnings[] = "Combo '{$noteCombo->keyword}' (dari Seller Note) memiliki item yang referensinya sudah terhapus.";
+                        continue;
+                    }
+                    $items[] = [
+                        'product_name' => $v->product?->name ?? '—',
+                        'variant_name' => $v->name,
+                        'sku' => $v->sku,
+                        'variant_id' => $v->id,
+                        'quantity' => $ci->quantity * $orderQty,
+                        'source' => 'combo',
+                        'matched_keyword' => $noteCombo->keyword.' (Seller Note)',
+                    ];
+                }
+
+                if (! $matchedKeyword) {
+                    $matchedKeyword = $noteCombo->keyword.' (Seller Note)';
+                } else {
+                    $matchedKeyword .= ' + '.$noteCombo->keyword.' (Note)';
+                }
+            }
+        }
+
+        // Kalau sudah ada items dari combo (barang + seller note), langsung return
+        if (! empty($items)) {
             return compact('items', 'warnings', 'matchedKeyword');
         }
 

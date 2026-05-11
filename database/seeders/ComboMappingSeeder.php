@@ -21,9 +21,17 @@ class ComboMappingSeeder extends Seeder
             ],
             [
                 'keyword' => '+Bosskit Ferio',
-                'description' => 'Tambahan paket boskit Ferio (varian khusus).',
+                'description' => 'Tambahan boskit Ferio dari Seller Note (T2/T16/dll).',
                 'items' => [
                     ['sku' => 'BSK-MTR-FER', 'qty' => 1],
+                ],
+            ],
+            [
+                'keyword' => 'Stir+Bosskit Ferio',
+                'description' => 'Paket stir + boskit Ferio (langsung combo lengkap).',
+                'items' => [
+                    ['sku' => 'STIR-SPR-BLK', 'qty' => 1],
+                    ['sku' => 'BSK-MTR-FER',  'qty' => 1],
                 ],
             ],
         ];

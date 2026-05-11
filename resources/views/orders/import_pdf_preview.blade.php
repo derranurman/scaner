@@ -89,6 +89,11 @@
                                     Barang di label: <span class="font-mono">{{ $entry['barang_keyword'] }}</span>
                                 </div>
                             <?php endif; ?>
+                            <?php if (!empty($entry['seller_note'])): ?>
+                                <div class="text-xs text-gray-500 mt-1">
+                                    Seller Note: <span class="font-mono font-semibold text-indigo-600">{{ $entry['seller_note'] }}</span>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                         <div class="flex-1 min-w-[280px]">
