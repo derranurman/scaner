@@ -21,6 +21,9 @@ class Order extends Model
         'courier',
         'buyer_name',
         'buyer_phone',
+        'host_live',
+        'sender_name',
+        'platform_deduction_id',
         'shipping_address',
         'status',
         'order_date',
@@ -45,6 +48,11 @@ class Order extends Model
     public function packedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'packed_by_user_id');
+    }
+
+    public function platformDeduction(): BelongsTo
+    {
+        return $this->belongsTo(PlatformDeduction::class);
     }
 
     public function isPending(): bool

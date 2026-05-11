@@ -84,6 +84,7 @@ class TiktokLabelParser
             'weight' => $fields['weight'],
             'order_date' => $fields['order_date'],
             'barang_keyword' => $fields['barang_keyword'],
+            'sender_name' => $fields['sender_name'],
             'product_rows' => $this->extractProductRows($text),
             'seller_note' => $this->extractSellerNote($text),
         ];
@@ -100,6 +101,7 @@ class TiktokLabelParser
     {
         $buyerName = null;
         $buyerPhone = null;
+        $senderName = null;
         $addressParts = [];
         $weight = null;
         $orderDate = null;
@@ -108,6 +110,21 @@ class TiktokLabelParser
         $mode = null; // 'address' aktif setelah "Penerima :" sampai ketemu Weight/Jumlah/dll
 
         foreach ($lines as $line) {
+            // --- Pengirim: nama + HP pengirim
+            if (preg_match('/^Pengirim\s*[:\-]\s*(.*)$/i', $line, $m)) {
+                $rest = trim($m[1]);
+                // Buang HP kalau ada di baris yang sama
+                if (preg_match('/(\(\+?62\)[\d\*\-\s]{5,30})/', $rest, $mm)) {
+                    $senderName = trim(str_replace($mm[0], '', $rest));
+                } else {
+                    $senderName = $rest ?: null;
+                }
+                if ($senderName === '') {
+                    $senderName = null;
+                }
+                continue;
+            }
+
             // --- Penerima: nama + HP (bisa di satu baris)
             if (preg_match('/^Penerima\s*[:\-]\s*(.*)$/i', $line, $m)) {
                 $rest = trim($m[1]);
@@ -176,6 +193,7 @@ class TiktokLabelParser
         return [
             'buyer_name' => $buyerName,
             'buyer_phone' => $buyerPhone,
+            'sender_name' => $senderName,
             'shipping_address' => $addressParts ? implode(', ', $addressParts) : null,
             'weight' => $weight,
             'order_date' => $orderDate,

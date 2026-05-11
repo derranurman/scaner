@@ -62,6 +62,7 @@ Route::middleware('auth')->group(function () {
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
         Route::delete('orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
+        Route::post('orders/{order}/meta', [OrderController::class, 'updateMeta'])->name('orders.update_meta');
 
         // Import
         Route::get('orders-import', [OrderImportController::class, 'show'])->name('orders.import.show');
