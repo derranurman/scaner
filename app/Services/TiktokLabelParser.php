@@ -377,125 +377,201 @@ class TiktokLabelParser
     /**
      * Shopee: tabel "# Nama Produk SKU Variasi Qty".
      *
-     * Contoh isi row:
-     *   "1 Stir kayu Palang Aluminium semi Celong Ring 15 &14 inc R14 Silver,Dus+buble 1"
-     *
-     * Karena layout PDF Shopee sering hanya 1 spasi antar kolom (bahkan
-     * kadang header "# Nama Produk..." tidak ketangkap smalot/pdfparser),
-     * kita pakai strategi bertingkat:
-     *   1. Ideal: anchor "# Nama Produk SKU Variasi Qty"
-     *   2. Fallback A: anchor "Nama Produk" saja
-     *   3. Fallback B: blok teks antara "No.Pesanan: ..." dan "Pesan:"
-     *   4. Fallback C: teks mentah — cari baris yang diawali "1 ", "2 ", dst
+     * Strategi baru (v2): cari anchor kuat "No.Pesanan: XXX" atau akhir halaman,
+     * lalu scan blok tengah untuk menemukan baris yang berakhir qty + diawali
+     * nomor urut. Kalau tidak ketemu dengan newline (PDF jadi 1 baris panjang),
+     * coba regex tunggal yang match "N <name...> <sku> <variasi> <qty>".
      *
      * @return array<int, array<string, mixed>>
      */
     private function extractShopeeProductRows(string $text): array
     {
+        // Strategi 1: cari blok antara "No.Pesanan: XXX" dan "Pesan:" (paling stabil)
         $block = null;
-
-        // 1. Match full header
         if (preg_match(
-            '/#\s*Nama\s*Produk\s+SKU\s+Variasi\s+Qty\s*(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|SPXID\d+|$)/is',
+            '/No\.?\s*Pesanan\s*[:\-]\s*[A-Z0-9]+\s*\n?(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|\z)/is',
             $text,
             $m
         )) {
             $block = $m[1];
         }
 
-        // 2. Fallback A: header pendek "Nama Produk"
+        // Strategi 2: blok setelah "Qty\n" (ada header tabel)
         if ($block === null && preg_match(
-            '/Nama\s*Produk\s+.*?Qty\s*(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|tokopedia|Shop\s*$|SPXID\d+|$)/is',
+            '/\bQty\b\s*\n(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|\z)/is',
             $text,
             $m
         )) {
             $block = $m[1];
         }
 
-        // 3. Fallback B: blok antara "No.Pesanan: XXX" dan "Pesan:" / akhir
-        if ($block === null && preg_match(
-            '/No\.?\s*Pesanan\s*[:\-]\s*[A-Z0-9]+\s*(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|tokopedia|Shop\s*$|$)/is',
-            $text,
-            $m
-        )) {
-            $block = $m[1];
-        }
-
-        // 4. Fallback C: pakai seluruh teks (akan difilter per baris di bawah)
+        // Strategi 3: seluruh teks (akan difilter per baris)
         if ($block === null) {
             $block = $text;
         }
 
-        $block = trim((string) $block);
+        $rows = $this->parseShopeeRowsFromBlock((string) $block);
+
+        // Fallback terakhir: kalau tidak ada row ketemu, coba parse single-line
+        if (empty($rows)) {
+            $rows = $this->parseShopeeSingleLine($text);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Parse block multi-line: cari baris yang diakhiri angka qty (1-3 digit)
+     * dan diawali nomor urut (atau nomor urut di tengah kalau wrap).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseShopeeRowsFromBlock(string $block): array
+    {
         $lines = array_values(array_filter(array_map('trim', explode("\n", $block))));
 
         $rows = [];
         $buffer = [];
 
         foreach ($lines as $line) {
-            // Skip baris yang jelas bukan row produk:
-            // - SPXID / resi saja
-            // - header tabel "# Nama Produk..."
-            // - footer "Pesan:", "Order ID:", "tokopedia", "Shop"
-            if (preg_match('/^(SPXID\d+|Shop\s*$|tokopedia|Pesan\s*[:\(]|Order\s*ID\s*[:\-]|#\s*Nama\s*Produk)/i', $line)) {
-                // Flush buffer supaya baris wrap sebelumnya tidak ikut
+            // Skip baris yang jelas noise (resi, footer)
+            if (preg_match('/^(SPXID\d+|LOP[- ][A-Z]?[- ]?\d+|V\s*[-]\s*\d+|Shop\s*$|tokopedia|Pesan\s*[:\(]|Order\s*ID\s*[:\-]|#\s*Nama\s*Produk|Nama\s*Produk\s+SKU|Variasi\s+Qty|^Qty\s*Total)/i', $line)) {
                 $buffer = [];
                 continue;
             }
 
             $buffer[] = $line;
 
-            // Row berakhir saat ada angka qty di akhir
-            if (! preg_match('/\s(\d{1,4})\s*$/', $line, $matchQty)) {
+            // Apakah baris ini punya qty di ujung? (spasi + angka 1-3 digit di akhir)
+            if (! preg_match('/\s(\d{1,3})\s*$/', $line, $matchQty)) {
                 continue;
             }
 
             $joined = implode(' ', $buffer);
 
-            // Row data Shopee selalu diawali nomor urut ("1 ", "2 ", dll)
-            // tapi dengan fallback, buffer bisa nyampur dengan teks lain.
-            // Cari posisi nomor urut pertama.
-            if (! preg_match('/(?:^|\s)(\d+)\s+(\S.+)$/', $joined, $startMatch)) {
-                $buffer = [];
-                continue;
-            }
-            // Ambil mulai dari nomor urut
-            $rowStart = strrpos($joined, $startMatch[0]);
-            $joined = ltrim(substr($joined, $rowStart));
-            if (! preg_match('/^\d+\s+/', $joined)) {
-                $buffer = [];
-                continue;
-            }
+            // Cari nomor urut di awal ATAU di tengah (kalau buffer kemasukan noise)
+            //   Pola: "^1 " atau " 1 Stir..."
+            if (preg_match('/(?:^|\s)(\d{1,2})\s+(\S.+)$/', $joined, $startMatch, PREG_OFFSET_CAPTURE)) {
+                $startOffset = (int) $startMatch[0][1];
+                $fromStart = ltrim(substr($joined, $startOffset));
 
-            $qty = (int) $matchQty[1];
-            $rest = trim(preg_replace('/\s\d{1,4}\s*$/', '', $joined));
-            $rest = preg_replace('/^\d+\s+/', '', $rest); // buang nomor urut di depan
-
-            // Strategi 1: Split by 2+ whitespace (kalau PDF pakai banyak spasi)
-            $cols = preg_split('/\s{2,}/', $rest) ?: [];
-
-            if (count($cols) >= 3) {
-                $productName = $cols[0];
-                $sku = $cols[1];
-                $variation = $cols[2];
-            } else {
-                // Strategi 2: Scan dari kanan.
-                //   Variasi biasanya mengandung koma atau "+" (mis. "Silver,Dus+buble")
-                //   SKU biasanya alfanumerik pendek tanpa spasi (mis. "R14", "STIR-SPR-BLK")
-                [$productName, $sku, $variation] = $this->splitShopeeRowFromRight($rest);
+                // Harus benar-benar diawali digit
+                if (preg_match('/^\d{1,2}\s+/', $fromStart)) {
+                    $row = $this->parseShopeeRowLine($fromStart);
+                    if ($row !== null) {
+                        $rows[] = $row;
+                        $buffer = [];
+                        continue;
+                    }
+                }
             }
 
-            $rows[] = [
-                'product_name' => trim($productName ?? $rest),
-                'sku' => $sku ? trim($sku) : null,
-                'seller_sku' => $variation ? trim($variation) : null,
-                'quantity' => $qty,
-                'raw_line' => $rest,
-            ];
+            // Reset buffer kalau baris ini ketemu qty tapi tidak fit sebagai row
             $buffer = [];
         }
 
         return $rows;
+    }
+
+    /**
+     * Fallback: teks PDF kadang jadi satu baris panjang tanpa newline.
+     * Cari pola "1 <name> <sku> <variasi> <qty>" dengan regex global.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseShopeeSingleLine(string $text): array
+    {
+        $rows = [];
+
+        // Ambil substring setelah "No.Pesanan:" kalau ada, supaya cuma kena
+        // blok produk, bukan resi berulang.
+        if (preg_match('/No\.?\s*Pesanan\s*[:\-]\s*[A-Z0-9]+(.+?)(?:Pesan\s*[:\(]|Order\s*ID|\z)/is', $text, $m)) {
+            $text = $m[1];
+        }
+
+        // Pattern: nomor-urut  nama-produk  variasi-mengandung-koma-atau-plus  qty
+        // Contoh: "1 Stir kayu Palang ... R14 Silver,Dus+buble 1"
+        //   - ^\d+\s - nomor urut
+        //   - (.+?) - nama produk (lazy)
+        //   - (\S+[\+,][\S,+]*) - variasi: token mengandung + atau ,
+        //   - \s(\d{1,3})\b - qty
+        if (preg_match_all(
+            '/\b(\d{1,2})\s+(.+?)(?:\s+([A-Z0-9][A-Z0-9\-_]{1,14}))?\s+(\S*[,+][\S,+]*)\s+(\d{1,3})\b/u',
+            $text,
+            $matches,
+            PREG_SET_ORDER
+        )) {
+            foreach ($matches as $m) {
+                $name = trim($m[2]);
+                $sku = trim($m[3] ?? '');
+                $variation = trim($m[4]);
+                $qty = (int) $m[5];
+
+                // Filter noise: name minimal 8 karakter supaya bukan angka random
+                if (mb_strlen($name) < 5) {
+                    continue;
+                }
+
+                $rows[] = [
+                    'product_name' => $name,
+                    'sku' => $sku ?: null,
+                    'seller_sku' => $variation ?: null,
+                    'quantity' => $qty,
+                    'raw_line' => trim($m[0]),
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Parse satu baris row Shopee yang sudah yakin diawali nomor urut.
+     *
+     * @return ?array<string, mixed>
+     */
+    private function parseShopeeRowLine(string $joined): ?array
+    {
+        // Buang nomor urut
+        if (! preg_match('/^\d{1,2}\s+(.+)$/s', $joined, $m)) {
+            return null;
+        }
+        $rest = trim($m[1]);
+
+        // Qty di akhir
+        if (! preg_match('/\s(\d{1,3})\s*$/', $rest, $mq)) {
+            return null;
+        }
+        $qty = (int) $mq[1];
+        $rest = trim(preg_replace('/\s\d{1,3}\s*$/', '', $rest));
+
+        // Strategi 1: Split by 2+ whitespace
+        $cols = preg_split('/\s{2,}/', $rest) ?: [];
+        if (count($cols) >= 3) {
+            return [
+                'product_name' => trim($cols[0]),
+                'sku' => trim($cols[1]) ?: null,
+                'seller_sku' => trim($cols[2]) ?: null,
+                'quantity' => $qty,
+                'raw_line' => $rest,
+            ];
+        }
+
+        // Strategi 2: scan dari kanan (heuristik)
+        [$productName, $sku, $variation] = $this->splitShopeeRowFromRight($rest);
+
+        // Validasi: produk minimal 5 char, supaya tidak tertukar dengan kode
+        if (! $productName || mb_strlen($productName) < 5) {
+            return null;
+        }
+
+        return [
+            'product_name' => trim($productName),
+            'sku' => $sku ? trim($sku) : null,
+            'seller_sku' => $variation ? trim($variation) : null,
+            'quantity' => $qty,
+            'raw_line' => $rest,
+        ];
     }
 
     /**
