@@ -2,8 +2,8 @@
 @section('title', 'Import PDF Label')
 
 @section('content')
-    @php($header = 'Import Label PDF (TikTok Shop)')
-    @php($subheader = 'Upload 1 file PDF berisi banyak halaman label. Sistem akan otomatis mendeteksi resi, alamat, dan produk.')
+    @php($header = 'Import Label PDF (TikTok Shop &amp; Shopee)')
+    @php($subheader = 'Upload 1 file PDF berisi banyak halaman label. Sistem auto-deteksi marketplace (TikTok / Shopee) lalu ekstrak resi, alamat, dan produk.')
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="card lg:col-span-2">
@@ -14,7 +14,9 @@
                        class="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white hover:file:bg-indigo-700">
                 @error('file') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
                 <p class="text-xs text-gray-500">
-                    Maks 20 MB. Format yang didukung: label pengiriman TikTok Shop dengan kurir J&T Express.
+                    Maks 20 MB. Format yang didukung:
+                    <span class="badge bg-indigo-50 text-indigo-700">TikTok Shop + J&T</span>
+                    <span class="badge bg-orange-50 text-orange-700">Shopee + SPX</span>
                 </p>
                 <button class="btn-primary" type="submit">Upload & Parse</button>
             </form>
@@ -23,7 +25,7 @@
         <div class="card">
             <h2 class="font-semibold mb-2">Tips</h2>
             <ul class="text-xs text-gray-600 space-y-2 list-disc list-inside">
-                <li>Download label dari TikTok Seller Center (biasanya bulk sudah dalam 1 PDF).</li>
+                <li>Download label bulk dari Seller Center (TikTok / Shopee).</li>
                 <li>Jangan scan fisik — gunakan file asli biar teks bisa dibaca.</li>
                 <li>Kalau ada barang combo (misal <span class="font-mono">Stir+Bosskit</span>), buat Combo Mapping dulu.</li>
                 <li>Resi yang sudah pernah di-packing akan otomatis dilewati.</li>

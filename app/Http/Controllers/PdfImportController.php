@@ -56,6 +56,7 @@ class PdfImportController extends Controller
             $resolution = $this->resolver->resolve($page);
             $enriched[] = [
                 'page' => $page['page'],
+                'marketplace' => $page['marketplace'] ?? 'tiktok',
                 'resi_number' => $page['resi_number'],
                 'tiktok_order_id' => $page['tiktok_order_id'],
                 'courier' => $page['courier'],

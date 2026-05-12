@@ -64,6 +64,12 @@
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="text-xs text-gray-500">Hal. {{ $entry['page'] }}</span>
                                 <span class="font-mono text-lg font-bold">{{ $entry['resi_number'] ?: '—' }}</span>
+                                <?php $mp = $entry['marketplace'] ?? 'tiktok'; ?>
+                                <?php if ($mp === 'shopee'): ?>
+                                    <span class="badge bg-orange-100 text-orange-700">Shopee / SPX</span>
+                                <?php else: ?>
+                                    <span class="badge bg-indigo-100 text-indigo-700">TikTok / J&amp;T</span>
+                                <?php endif; ?>
                                 <?php if ($entry['already_exists']): ?>
                                     <span class="badge bg-amber-100 text-amber-700">Sudah ada &middot; akan update</span>
                                 <?php endif; ?>
