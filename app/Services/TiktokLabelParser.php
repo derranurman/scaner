@@ -375,43 +375,95 @@ class TiktokLabelParser
     }
 
     /**
-     * Shopee: "# Nama Produk SKU Variasi Qty"
+     * Shopee: tabel "# Nama Produk SKU Variasi Qty".
      *
-     * Contoh:
+     * Contoh isi row:
      *   "1 Stir kayu Palang Aluminium semi Celong Ring 15 &14 inc R14 Silver,Dus+buble 1"
      *
-     * Karena di PDF Shopee banyak yang cuma 1 spasi antar kolom, kita pakai
-     * heuristik berbeda: scan dari kanan (Qty), lalu Variasi (mengandung koma
-     * atau simbol+), lalu SKU (alfanumerik pendek), sisanya nama produk.
+     * Karena layout PDF Shopee sering hanya 1 spasi antar kolom (bahkan
+     * kadang header "# Nama Produk..." tidak ketangkap smalot/pdfparser),
+     * kita pakai strategi bertingkat:
+     *   1. Ideal: anchor "# Nama Produk SKU Variasi Qty"
+     *   2. Fallback A: anchor "Nama Produk" saja
+     *   3. Fallback B: blok teks antara "No.Pesanan: ..." dan "Pesan:"
+     *   4. Fallback C: teks mentah — cari baris yang diawali "1 ", "2 ", dst
      *
      * @return array<int, array<string, mixed>>
      */
     private function extractShopeeProductRows(string $text): array
     {
-        if (! preg_match(
+        $block = null;
+
+        // 1. Match full header
+        if (preg_match(
             '/#\s*Nama\s*Produk\s+SKU\s+Variasi\s+Qty\s*(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|SPXID\d+|$)/is',
             $text,
             $m
         )) {
-            return [];
+            $block = $m[1];
         }
 
-        $block = trim($m[1]);
+        // 2. Fallback A: header pendek "Nama Produk"
+        if ($block === null && preg_match(
+            '/Nama\s*Produk\s+.*?Qty\s*(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|tokopedia|Shop\s*$|SPXID\d+|$)/is',
+            $text,
+            $m
+        )) {
+            $block = $m[1];
+        }
+
+        // 3. Fallback B: blok antara "No.Pesanan: XXX" dan "Pesan:" / akhir
+        if ($block === null && preg_match(
+            '/No\.?\s*Pesanan\s*[:\-]\s*[A-Z0-9]+\s*(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|tokopedia|Shop\s*$|$)/is',
+            $text,
+            $m
+        )) {
+            $block = $m[1];
+        }
+
+        // 4. Fallback C: pakai seluruh teks (akan difilter per baris di bawah)
+        if ($block === null) {
+            $block = $text;
+        }
+
+        $block = trim((string) $block);
         $lines = array_values(array_filter(array_map('trim', explode("\n", $block))));
 
         $rows = [];
         $buffer = [];
 
         foreach ($lines as $line) {
+            // Skip baris yang jelas bukan row produk:
+            // - SPXID / resi saja
+            // - header tabel "# Nama Produk..."
+            // - footer "Pesan:", "Order ID:", "tokopedia", "Shop"
+            if (preg_match('/^(SPXID\d+|Shop\s*$|tokopedia|Pesan\s*[:\(]|Order\s*ID\s*[:\-]|#\s*Nama\s*Produk)/i', $line)) {
+                // Flush buffer supaya baris wrap sebelumnya tidak ikut
+                $buffer = [];
+                continue;
+            }
+
             $buffer[] = $line;
 
-            // Row berakhir saat ada angka qty di akhir DAN row diawali nomor urut (1, 2, ...)
+            // Row berakhir saat ada angka qty di akhir
             if (! preg_match('/\s(\d{1,4})\s*$/', $line, $matchQty)) {
                 continue;
             }
 
             $joined = implode(' ', $buffer);
+
+            // Row data Shopee selalu diawali nomor urut ("1 ", "2 ", dll)
+            // tapi dengan fallback, buffer bisa nyampur dengan teks lain.
+            // Cari posisi nomor urut pertama.
+            if (! preg_match('/(?:^|\s)(\d+)\s+(\S.+)$/', $joined, $startMatch)) {
+                $buffer = [];
+                continue;
+            }
+            // Ambil mulai dari nomor urut
+            $rowStart = strrpos($joined, $startMatch[0]);
+            $joined = ltrim(substr($joined, $rowStart));
             if (! preg_match('/^\d+\s+/', $joined)) {
+                $buffer = [];
                 continue;
             }
 

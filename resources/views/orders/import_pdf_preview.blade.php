@@ -100,6 +100,13 @@
                                     Seller Note: <span class="font-mono font-semibold text-indigo-600">{{ $entry['seller_note'] }}</span>
                                 </div>
                             <?php endif; ?>
+
+                            <?php if (!empty($entry['raw_text'] ?? null) || !empty($entry['items']) === false): ?>
+                                <details class="mt-2">
+                                    <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-700">Lihat Teks Mentah PDF (debug)</summary>
+                                    <pre class="mt-1 text-[10px] bg-gray-50 border border-gray-200 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-gray-600">{{ $entry['raw_text'] ?? '(tidak tersimpan)' }}</pre>
+                                </details>
+                            <?php endif; ?>
                         </div>
 
                         <div class="flex-1 min-w-[280px]">
