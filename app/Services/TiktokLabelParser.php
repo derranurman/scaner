@@ -377,18 +377,35 @@ class TiktokLabelParser
     /**
      * Shopee: tabel "# Nama Produk SKU Variasi Qty".
      *
-     * Strategi baru (v2): cari anchor kuat "No.Pesanan: XXX" atau akhir halaman,
-     * lalu scan blok tengah untuk menemukan baris yang berakhir qty + diawali
-     * nomor urut. Kalau tidak ketemu dengan newline (PDF jadi 1 baris panjang),
-     * coba regex tunggal yang match "N <name...> <sku> <variasi> <qty>".
+     * Strategi multi-fallback:
+     *   (A) Blok antara header "Qty\n" dan "Pesan:" / "No.Pesanan" / \z
+     *       — paling stabil, mengatasi kasus No.Pesanan diletakkan di bawah Pesan.
+     *   (B) Blok antara "No.Pesanan: XXX" dan "Pesan:" — layout Shopee lama.
+     *   (C) Seluruh teks halaman.
+     *
+     * Setiap blok diparse dengan:
+     *   1. parseShopeeMultilineRows — qty berdiri sendiri di satu baris,
+     *      nama/SKU/variasi bisa wrap ke beberapa baris (termasuk mid-word).
+     *   2. parseShopeeRowsFromBlock — qty di ujung baris yang sama (layout lama).
+     *   3. parseShopeeSingleLine — seluruh row jadi satu baris panjang.
      *
      * @return array<int, array<string, mixed>>
      */
     private function extractShopeeProductRows(string $text): array
     {
-        // Strategi 1: cari blok antara "No.Pesanan: XXX" dan "Pesan:" (paling stabil)
+        // (A) Anchor kuat: header tabel "Qty\n" → seller-note "Pesan:" / dll.
+        //     Dipakai duluan karena No.Pesanan kadang diletakkan DI BAWAH Pesan.
         $block = null;
         if (preg_match(
+            '/\bQty\b\s*\n(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|No\.?\s*Pesanan\s*[:\-]|\z)/is',
+            $text,
+            $m
+        )) {
+            $block = $m[1];
+        }
+
+        // (B) Fallback: setelah "No.Pesanan: XXX" sampai "Pesan:" (layout lama).
+        if ($block === null && preg_match(
             '/No\.?\s*Pesanan\s*[:\-]\s*[A-Z0-9]+\s*\n?(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|\z)/is',
             $text,
             $m
@@ -396,28 +413,219 @@ class TiktokLabelParser
             $block = $m[1];
         }
 
-        // Strategi 2: blok setelah "Qty\n" (ada header tabel)
-        if ($block === null && preg_match(
-            '/\bQty\b\s*\n(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|\z)/is',
-            $text,
-            $m
-        )) {
-            $block = $m[1];
-        }
-
-        // Strategi 3: seluruh teks (akan difilter per baris)
+        // (C) Seluruh teks — akan difilter per baris.
         if ($block === null) {
             $block = $text;
         }
 
-        $rows = $this->parseShopeeRowsFromBlock((string) $block);
+        // Parse: multi-line (qty di baris sendiri) dulu, baru fallback ke legacy.
+        $rows = $this->parseShopeeMultilineRows((string) $block);
 
-        // Fallback terakhir: kalau tidak ada row ketemu, coba parse single-line
+        if (empty($rows)) {
+            $rows = $this->parseShopeeRowsFromBlock((string) $block);
+        }
+
+        // Fallback terakhir: teks PDF satu baris panjang tanpa newline.
         if (empty($rows)) {
             $rows = $this->parseShopeeSingleLine($text);
         }
 
         return $rows;
+    }
+
+    /**
+     * Parse block Shopee di mana tiap kolom (nama / SKU / variasi / qty) bisa
+     * wrap ke baris sendiri. Layout typical:
+     *
+     *   1Stir kayu Palang ...   <- index + nama (kadang tanpa spasi)
+     *   Ring 15 &14 inc         <- sambungan nama
+     *   R14                     <- SKU
+     *   Silver,Dus+bubl         <- variasi
+     *   e                       <- sambungan variasi (wrap mid-word)
+     *   1                       <- qty (baris sendiri)
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseShopeeMultilineRows(string $block): array
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), fn ($l) => $l !== ''));
+        if (empty($lines)) {
+            return [];
+        }
+
+        // 1. Buang baris noise yang bisa nyasar ke dalam blok produk.
+        $lines = array_values(array_filter($lines, function ($line) {
+            return ! preg_match(
+                '/^(SPXID\d+|J[XP]\d{8,}|LOP[- ]?[A-Z]?[- ]?\d+|V\s*[-]\s*\d+|ECO$|COD$|Shop$|tokopedia|Pesan\s*[:\(]|Order\s*ID\s*[:\-]|No\.?\s*Pesanan|Pengirim\s*[:\-]?|#\s*Nama\s*Produk|Nama\s*Produk\s+SKU|Variasi\s+Qty|Qty\s*Total|Batas\s*Kirim|Berat\s*[:\-])/i',
+                $line
+            );
+        }));
+
+        // 2. Split index yang nempel ke nama: "1Stir kayu..." -> ["1", "Stir kayu..."]
+        $normalized = [];
+        foreach ($lines as $line) {
+            if (preg_match('/^(\d{1,2})([A-Za-z].+)$/u', $line, $m)) {
+                $normalized[] = $m[1];
+                $normalized[] = trim($m[2]);
+            } else {
+                $normalized[] = $line;
+            }
+        }
+
+        // 3. Baca token: pure digit = batas row (index baru ATAU qty row sekarang).
+        $rows = [];
+        $buffer = [];
+        $rowStarted = false;
+
+        foreach ($normalized as $line) {
+            if (preg_match('/^\d{1,3}$/', $line)) {
+                $num = (int) $line;
+
+                if (! $rowStarted && empty($buffer)) {
+                    // Awal row: angka ini adalah nomor urut.
+                    $rowStarted = true;
+                    continue;
+                }
+
+                if (! empty($buffer)) {
+                    // Angka ini adalah qty — akhiri row sekarang.
+                    $row = $this->buildShopeeRowFromBuffer($buffer, $num);
+                    if ($row !== null) {
+                        $rows[] = $row;
+                    }
+                    $buffer = [];
+                    $rowStarted = false;
+                    continue;
+                }
+
+                // Buffer kosong tapi rowStarted=true → dua angka berturut,
+                // anggap angka kedua sebagai index ulang. Skip.
+                continue;
+            }
+
+            $buffer[] = $line;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Susun row Shopee dari buffer baris-konten + qty yang sudah diketahui.
+     *
+     * Heuristik:
+     *   - Cari baris yang "terlihat seperti SKU": token pendek alfanumerik
+     *     tanpa spasi/koma/plus, minimal 1 huruf. Baris pertama dilewati
+     *     (itu nama produk), baris terakhir juga tidak diprioritaskan.
+     *   - nama = semua baris SEBELUM SKU, digabung dengan smart-join.
+     *   - variasi = semua baris SESUDAH SKU, digabung dengan smart-join.
+     *   - Kalau SKU tidak ketemu, baris terakhir yang mengandung ',' atau '+'
+     *     dianggap variasi; sisanya nama.
+     *
+     * @param array<int, string> $buffer
+     * @return ?array<string, mixed>
+     */
+    private function buildShopeeRowFromBuffer(array $buffer, int $qty): ?array
+    {
+        if (empty($buffer)) {
+            return null;
+        }
+
+        $skuIdx = null;
+        foreach ($buffer as $i => $line) {
+            if ($i === 0) {
+                // Baris pertama = nama produk, jangan diklaim SKU.
+                continue;
+            }
+            if (mb_strlen($line) > 20) {
+                continue;
+            }
+            if (str_contains($line, ' ') || str_contains($line, ',') || str_contains($line, '+')) {
+                continue;
+            }
+            if (! preg_match('/^[A-Z0-9][A-Z0-9\-_\.]{0,14}$/i', $line)) {
+                continue;
+            }
+            if (! preg_match('/[A-Za-z]/', $line)) {
+                // Pure digits: kemungkinan sisa nomor, bukan SKU.
+                continue;
+            }
+            $skuIdx = $i;
+            break;
+        }
+
+        $sku = null;
+        if ($skuIdx !== null) {
+            $nameParts = array_slice($buffer, 0, $skuIdx);
+            $sku = $buffer[$skuIdx];
+            $variationParts = array_slice($buffer, $skuIdx + 1);
+        } else {
+            // Tidak ketemu SKU: coba pisah baris terakhir sebagai variasi
+            // kalau mengandung koma/plus (ciri khas variasi Shopee).
+            $lastIdx = count($buffer) - 1;
+            if ($lastIdx > 0 && preg_match('/[,+]/', $buffer[$lastIdx])) {
+                $nameParts = array_slice($buffer, 0, $lastIdx);
+                $variationParts = [$buffer[$lastIdx]];
+            } else {
+                $nameParts = $buffer;
+                $variationParts = [];
+            }
+        }
+
+        $name = $this->smartJoinShopeeLines($nameParts);
+        $variation = $this->smartJoinShopeeLines($variationParts);
+
+        if ($name === '' || mb_strlen($name) < 3) {
+            return null;
+        }
+
+        return [
+            'product_name' => $name,
+            'sku' => $sku ?: null,
+            'seller_sku' => $variation ?: null,
+            'quantity' => $qty,
+            'raw_line' => trim(implode(' | ', $buffer).' | qty='.$qty),
+        ];
+    }
+
+    /**
+     * Smart-join: kalau baris BERIKUTNYA sangat pendek (<=3 char) dan
+     * ekstensi mid-word yang wajar (huruf kecil, tanpa spasi/tanda baca)
+     * sementara baris sebelumnya juga berakhir dengan huruf/angka — gabung
+     * tanpa spasi (line-wrap mid-word). Selain itu, gabung dengan spasi.
+     *
+     * Contoh mid-word wrap (join tanpa spasi):
+     *   ["Silver,Dus+bubl", "e"] -> "Silver,Dus+buble"
+     *
+     * Contoh baris lanjutan biasa (join dengan spasi):
+     *   ["Kemeja batik pria modern", "lengan panjang"]
+     *     -> "Kemeja batik pria modern lengan panjang"
+     *
+     * @param array<int, string> $parts
+     */
+    private function smartJoinShopeeLines(array $parts): string
+    {
+        $parts = array_values(array_filter(array_map('trim', $parts), fn ($p) => $p !== ''));
+        if (empty($parts)) {
+            return '';
+        }
+
+        $result = $parts[0];
+        $count = count($parts);
+        for ($i = 1; $i < $count; $i++) {
+            $curr = $parts[$i];
+
+            $isMidWordWrap = preg_match('/[A-Za-z0-9]$/u', $result)
+                && mb_strlen($curr) <= 3
+                && preg_match('/^[a-z]+$/u', $curr);
+
+            if ($isMidWordWrap) {
+                $result .= $curr;
+            } else {
+                $result .= ' '.$curr;
+            }
+        }
+
+        return trim($result);
     }
 
     /**
