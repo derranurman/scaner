@@ -424,11 +424,11 @@ class TiktokLabelParser
         $buffer = [];
 
         foreach ($lines as $line) {
-            // Pure-digit line = qty → flush current buffer sebagai row.
+            // Pure-digit line = qty di baris sendiri → flush buffer sebagai row.
             if (preg_match('/^(\d{1,4})$/', $line)) {
                 if (! empty($buffer)) {
                     $qty = (int) $line;
-                    $row = $this->buildTiktokRowFromBuffer($buffer, $qty);
+                    $row = $this->buildTiktokRowFromBuffer($buffer, $qty, false);
                     if ($row !== null) {
                         $rows[] = $row;
                     }
@@ -440,14 +440,18 @@ class TiktokLabelParser
             $buffer[] = $line;
         }
 
-        // Flush sisa buffer kalau baris terakhir berakhir <spasi><digit>
-        // (kasus qty inline tanpa baris digit terpisah).
+        // Flush sisa buffer: baris terakhir berakhir " <digit>" (qty inline).
+        //   Kasus: seller_sku + qty ada di baris terakhir yang sama.
+        //   Contoh layout label ini:
+        //     Stir Racing New Skeleton Import   <- nama part 1
+        //     R14" Black                         <- nama part 2
+        //     Stir Aja 1                         <- seller_sku + qty
         if (! empty($buffer)) {
             $lastLine = end($buffer);
             if (preg_match('/^(.+?)\s+(\d{1,4})$/', $lastLine, $inlineMatch)) {
                 $qty = (int) $inlineMatch[2];
                 $buffer[array_key_last($buffer)] = trim($inlineMatch[1]);
-                $row = $this->buildTiktokRowFromBuffer($buffer, $qty);
+                $row = $this->buildTiktokRowFromBuffer($buffer, $qty, true);
                 if ($row !== null) {
                     $rows[] = $row;
                 }
@@ -460,16 +464,19 @@ class TiktokLabelParser
     /**
      * Susun row TikTok dari buffer baris-konten + qty.
      *
-     * Heuristik split name / seller_sku:
-     *   - Seller SKU khas TikTok mengandung ','  (mis. "Coklat,Stir+Bosskit")
-     *   - Nama produk jarang punya koma standalone
-     *   - Cari baris pertama (selain baris 0) yang mengandung ',' → itu awal
-     *     seller_sku. Baris 0 selalu nama.
+     * $qtyWasInline menandakan qty ter-split dari ujung baris terakhir buffer.
+     * Ketika TRUE, baris terakhir buffer dianggap sebagai seller_sku (kolom
+     * terakhir) dan baris-baris di atasnya adalah product_name. Ini meng-
+     * cover layout di mana SKU kosong & seller_sku cukup pendek sehingga
+     * tampil di baris yang sama dengan qty (mis. "Stir Aja 1").
+     *
+     * Ketika FALSE (qty berdiri di baris sendiri), pakai heuristik koma:
+     * baris pertama yang mengandung ',' = awal seller_sku.
      *
      * @param array<int, string> $buffer
      * @return ?array<string, mixed>
      */
-    private function buildTiktokRowFromBuffer(array $buffer, int $qty): ?array
+    private function buildTiktokRowFromBuffer(array $buffer, int $qty, bool $qtyWasInline = false): ?array
     {
         if (empty($buffer)) {
             return null;
@@ -499,8 +506,33 @@ class TiktokLabelParser
             ];
         }
 
-        // Kasus multi-line: split name vs seller_sku berdasarkan baris
-        // pertama yang mengandung koma.
+        // Kasus qty inline di baris terakhir:
+        //   Baris terakhir (setelah qty di-strip) = seller_sku kolom.
+        //   Baris-baris sebelumnya = product_name.
+        // Ini cocok untuk layout label tanpa SKU dan tanpa koma di seller_sku,
+        // mis. "Stir Aja 1" (seller_sku="Stir Aja", qty=1).
+        if ($qtyWasInline) {
+            $lastContent = trim((string) end($buffer));
+            if ($lastContent !== '') {
+                $nameParts = array_slice($buffer, 0, -1);
+                $sellerSku = trim($lastContent);
+                $name = $this->smartJoinShopeeLines($nameParts);
+
+                if ($name !== '' && mb_strlen($name) >= 3) {
+                    return [
+                        'product_name' => $name,
+                        'sku' => null,
+                        'seller_sku' => $sellerSku ?: null,
+                        'quantity' => $qty,
+                        'raw_line' => trim(implode(' | ', $buffer).' | qty='.$qty),
+                    ];
+                }
+            }
+            // Fall through ke heuristik koma kalau gagal (mis. nama terlalu pendek)
+        }
+
+        // Kasus qty di baris sendiri: baris pertama yang mengandung ',' = awal
+        // seller_sku (khas TikTok: "Coklat,Stir+Bosskit").
         $sellerSkuStart = null;
         foreach ($buffer as $i => $line) {
             if ($i === 0) {
