@@ -473,6 +473,8 @@ class TiktokLabelParser
         }
 
         // 3. Baca token: pure digit = batas row (index baru ATAU qty row sekarang).
+        //    Tapi kalau baris konten berakhir " <digit>" (qty inline), flush
+        //    langsung tanpa menunggu baris digit terpisah.
         $rows = [];
         $buffer = [];
         $rowStarted = false;
@@ -503,7 +505,38 @@ class TiktokLabelParser
                 continue;
             }
 
+            // Cek apakah baris konten ini punya qty inline di ujung (mis. "Tombol Klakson 1")
+            // Ini terjadi ketika produk tidak punya SKU/variasi, qty langsung di ujung nama.
+            if ($rowStarted && preg_match('/^(.+?)\s+(\d{1,3})$/', $line, $inlineMatch)) {
+                $contentPart = trim($inlineMatch[1]);
+                $inlineQty = (int) $inlineMatch[2];
+
+                // Hanya anggap sebagai qty inline kalau konten sebelum angka bukan
+                // murni kode pendek (min 5 char) — supaya "Ring 15" tidak salah split.
+                // Trik: kita hanya pakai ini kalau TIDAK ada baris lain yang menyusul
+                // (artinya baris ini satu-satunya konten untuk row ini).
+                // Untuk safety, masukkan ke buffer dulu — flush di akhir loop kalau
+                // tidak ada digit terpisah menyusul.
+                $buffer[] = $line;
+                continue;
+            }
+
             $buffer[] = $line;
+        }
+
+        // 4. Flush buffer yang tersisa: kalau buffer berisi konten dan baris terakhirnya
+        //    berakhir dengan angka (qty inline), strip qty dari baris tersebut dan flush.
+        if (! empty($buffer) && $rowStarted) {
+            $lastLine = end($buffer);
+            if (preg_match('/^(.+?)\s+(\d{1,3})$/', $lastLine, $inlineMatch)) {
+                $inlineQty = (int) $inlineMatch[2];
+                // Ganti baris terakhir buffer dengan versi tanpa qty
+                $buffer[array_key_last($buffer)] = trim($inlineMatch[1]);
+                $row = $this->buildShopeeRowFromBuffer($buffer, $inlineQty);
+                if ($row !== null) {
+                    $rows[] = $row;
+                }
+            }
         }
 
         return $rows;
