@@ -64,6 +64,32 @@ class ProductSeeder extends Seeder
                     ['name' => 'Silver', 'sku' => 'SPN-BE-SLV', 'stock' => 18, 'min_stock' => 4],
                 ],
             ],
+            [
+                'name' => 'Spoiler Belakang Universal',
+                'sku' => 'SPL-UNV',
+                'description' => 'Spoiler belakang model universal.',
+                'type' => 'Spoiler',
+                'purchase_price' => 120000,
+                'reseller_price' => 160000,
+                'selling_price' => 200000,
+                'variants' => [
+                    ['name' => 'Hitam Doff', 'sku' => 'SPL-UNV-BLK', 'stock' => 15, 'min_stock' => 3],
+                    ['name' => 'Carbon',     'sku' => 'SPL-UNV-CBN', 'stock' => 10, 'min_stock' => 3],
+                ],
+            ],
+            [
+                'name' => 'Klakson Denso Keong',
+                'sku' => 'KLK-DNS',
+                'description' => 'Klakson Denso tipe keong kencang.',
+                'type' => 'Klakson',
+                'purchase_price' => 55000,
+                'reseller_price' => 75000,
+                'selling_price' => 95000,
+                'variants' => [
+                    ['name' => 'Merah',  'sku' => 'KLK-DNS-RED', 'stock' => 20, 'min_stock' => 4],
+                    ['name' => 'Chrome', 'sku' => 'KLK-DNS-CHR', 'stock' => 15, 'min_stock' => 4],
+                ],
+            ],
         ];
 
         foreach ($products as $data) {
