@@ -6,18 +6,47 @@ use App\Models\Order;
 use App\Models\PlatformDeduction;
 
 /**
- * Hitung semua metrik ekonomi untuk 1 pesanan:
- *   - Total Jual / Modal / Reseller
- *   - Potongan platform (persen & nominal) dengan aturan khusus
- *     "Bulat Max 650Rb" untuk ADM dll.
- *   - Profit Kotor & Margin Bisnis / Live.
+ * Hitung semua metrik ekonomi untuk 1 pesanan.
+ *
+ * RUMUS (sesuai spesifikasi user, Mei 2026):
+ *
+ *   Total Jual     = Σ(Harga Jual × Qty)
+ *   Total Modal    = Σ(Harga Beli × Qty)
+ *   Total Reseller = Σ(Harga Reseller × Qty)
+ *
+ *   // --- Potongan persentase ---
+ *   ADM Rp          = min(Total Jual, 650.000) × ADM %
+ *   Pajak Rp        = min(Total Jual, 650.000) × Pajak %
+ *   Ongkir Free Rp  = Total Jual × Ongkir Free %
+ *   Yield Rp        = Total Jual × Yield %
+ *   Operasional Rp  = Total Jual × Operasional %
+ *
+ *   // Kolom khusus "Bulat Max 650Rb" = Ongkir Free % dengan dasar dicap 650k
+ *   Bulat Max 650Rb = min(Total Jual, 650.000) × Ongkir Free %
+ *
+ *   // --- Agregat potongan ---
+ *   Total Potongan Aplikasi = ADM + Bulat Max 650Rb + Biaya Layanan + Biaya Logistik
+ *
+ *   // --- Margin ---
+ *   Margin Live     = Total Jual - Total Reseller
+ *   Profit Kotor    = Total Jual - Total Modal - Margin Live
+ *                   (= Total Reseller - Total Modal, ekuivalen)
+ *
+ *   Bersih Margin Live = Margin Live
+ *                      - (ADM + Ongkir Free + Biaya Layanan + Biaya Logistik + Pajak + Yield)
+ *
+ *   Margin Bisnis   = Profit Kotor
+ *                   - Total Potongan Aplikasi
+ *                   - Operasional
+ *                   - Plastik/Dus
+ *                   - Ongkir Cargo
  *
  * Semua return value disimpan di array dengan key stabil supaya
  * blade tinggal print (tidak ada logic di view).
  */
 class OrderMetricsService
 {
-    /** Dasar perhitungan ADM dicap maksimal ini (aturan TikTok). */
+    /** Dasar perhitungan ADM/Pajak/Bulat Max di-cap maksimal ini (aturan TikTok). */
     public const BULAT_MAX = 650_000.0;
 
     /**
@@ -48,8 +77,8 @@ class OrderMetricsService
 
         $deduction = $order->platformDeduction;
 
-        // Dasar ADM/Pajak: min(totalJual, BULAT_MAX) mencerminkan cap TikTok.
-        $bulatMax = min($totalJual, self::BULAT_MAX);
+        // Dasar yang di-cap 650k: dipakai untuk ADM, Pajak, dan Bulat Max 650Rb.
+        $capBase = min($totalJual, self::BULAT_MAX);
 
         $admRp = 0.0;
         $cbBpRp = 0.0;
@@ -57,6 +86,7 @@ class OrderMetricsService
         $yieldRp = 0.0;
         $operasionalRp = 0.0;
         $pajakRp = 0.0;
+        $bulatMax = 0.0;
         $ongkirCargo = 0.0;
         $label = 0.0;
         $plastik = 0.0;
@@ -78,12 +108,16 @@ class OrderMetricsService
             $operasionalPct = (float) $deduction->operational_percent;
             $pajakPct = (float) $deduction->tax_percent;
 
-            $admRp = $bulatMax * $admPct / 100;
+            // Potongan persentase:
+            //   - ADM, Pajak, Bulat Max 650Rb → dasar di-cap 650k.
+            //   - Ongkir Free, Yield, Operasional → dasar Total Jual penuh.
+            $admRp = $capBase * $admPct / 100;
             $cbBpRp = $totalJual * $cbBpPct / 100;
             $ongkirFreeRp = $totalJual * $ongkirFreePct / 100;
             $yieldRp = $totalJual * $yieldPct / 100;
             $operasionalRp = $totalJual * $operasionalPct / 100;
-            $pajakRp = $bulatMax * $pajakPct / 100;
+            $pajakRp = $capBase * $pajakPct / 100;
+            $bulatMax = $capBase * $ongkirFreePct / 100;
 
             $ongkirCargo = (float) $deduction->shipping_cargo_amount;
             $label = (float) $deduction->label_amount;
@@ -92,27 +126,35 @@ class OrderMetricsService
             $biayaLogistik = (float) $deduction->logistics_amount;
         }
 
-        $totalPotonganAplikasi = $admRp + $cbBpRp + $ongkirFreeRp + $yieldRp
-            + $operasionalRp + $pajakRp
-            + $ongkirCargo + $label + $plastik
-            + $biayaLayanan + $biayaLogistik;
+        // Total Potongan Aplikasi = ADM + Bulat Max 650Rb + Biaya Layanan + Biaya Logistik
+        $totalPotonganAplikasi = $admRp + $bulatMax + $biayaLayanan + $biayaLogistik;
 
-        // Profit Kotor = Total Jual - Total Modal
-        $profitKotor = $totalJual - $totalModal;
-        $pctProfitKotor = $totalJual > 0 ? ($profitKotor / $totalJual) * 100 : 0;
-
-        // Margin Bisnis = Profit Kotor - Total Potongan Aplikasi
-        $marginBisnis = $profitKotor - $totalPotonganAplikasi;
-        $pctMarginBisnis = $totalJual > 0 ? ($marginBisnis / $totalJual) * 100 : 0;
-
-        // Margin Live = Total Jual - Total Reseller - Total Potongan Aplikasi
-        //   (keuntungan yang dibagikan ke host live setelah potongan aplikasi)
-        $marginLive = $totalJual - $totalReseller - $totalPotonganAplikasi;
+        // Margin Live = Total Jual - Total Reseller
+        $marginLive = $totalJual - $totalReseller;
         $pctMarginLive = $totalJual > 0 ? ($marginLive / $totalJual) * 100 : 0;
 
-        // Bersih Margin Live = Margin Live - (komisi / fee host, default 0).
-        //   Saat ini belum ada kolom komisi host, jadi sama dengan Margin Live.
-        $bersihMarginLive = $marginLive;
+        // Profit Kotor = Total Jual - Total Modal - Margin Live
+        $profitKotor = $totalJual - $totalModal - $marginLive;
+        $pctProfitKotor = $totalJual > 0 ? ($profitKotor / $totalJual) * 100 : 0;
+
+        // Bersih Margin Live = Margin Live
+        //   - (ADM + Ongkir Free + Biaya Layanan + Biaya Logistik + Pajak + Yield)
+        $bersihMarginLive = $marginLive
+            - $admRp
+            - $ongkirFreeRp
+            - $biayaLayanan
+            - $biayaLogistik
+            - $pajakRp
+            - $yieldRp;
+
+        // Margin Bisnis = Profit Kotor
+        //   - Total Potongan Aplikasi - Operasional - Plastik/Dus - Ongkir Cargo
+        $marginBisnis = $profitKotor
+            - $totalPotonganAplikasi
+            - $operasionalRp
+            - $plastik
+            - $ongkirCargo;
+        $pctMarginBisnis = $totalJual > 0 ? ($marginBisnis / $totalJual) * 100 : 0;
 
         return [
             'total_qty' => $totalQty,

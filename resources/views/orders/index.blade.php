@@ -5,6 +5,17 @@
     <?php $header = 'Pesanan'; ?>
 
     <div class="card">
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <p class="text-xs text-gray-500">
+                Tabel bergerak horizontal. Host Live &amp; Platform bisa diedit langsung
+                (perubahan platform akan otomatis menghitung ulang ADM, Ongkir, Pajak, dll).
+            </p>
+            <div class="flex gap-2">
+                <a href="{{ route('orders.create') }}" class="btn-primary">+ Tambah Pesanan</a>
+                <a href="{{ route('orders.import.pdf.show') }}" class="btn-secondary">Import PDF</a>
+            </div>
+        </div>
+
         <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
             <input name="q" value="{{ $q }}" placeholder="Cari resi / order id / pembeli / host…" class="input">
             <select name="status" class="input">
@@ -20,11 +31,6 @@
             </div>
         </form>
 
-        <p class="text-xs text-gray-500 mb-2">
-            Tabel bergerak horizontal. Host Live &amp; Platform bisa diedit langsung
-            (perubahan platform akan otomatis menghitung ulang ADM, Ongkir, Pajak, dll).
-        </p>
-
         <div class="overflow-x-auto">
             <table class="text-xs whitespace-nowrap border-collapse">
                 <thead class="text-left uppercase text-gray-500 border-b bg-gray-50">
@@ -35,6 +41,7 @@
                         <th class="px-2 py-2">Platform</th>
                         <th class="px-2 py-2">Pengirim</th>
                         <th class="px-2 py-2">Pembeli</th>
+                        <th class="px-2 py-2">No. HP</th>
                         <th class="px-2 py-2">SKU</th>
                         <th class="px-2 py-2 text-right">Harga Jual</th>
                         <th class="px-2 py-2 text-right">Total Jual</th>
@@ -65,9 +72,11 @@
                 <tbody class="divide-y">
                     <?php if ($orders->isEmpty()): ?>
                         <tr>
-                            <td colspan="31" class="py-6 text-center text-gray-500">
+                            <td colspan="32" class="py-6 text-center text-gray-500">
                                 Belum ada pesanan.
                                 <a href="{{ route('orders.import.pdf.show') }}" class="text-indigo-600 hover:underline">Import PDF &rarr;</a>
+                                <span class="text-gray-400">·</span>
+                                <a href="{{ route('orders.create') }}" class="text-indigo-600 hover:underline">Tambah manual &rarr;</a>
                             </td>
                         </tr>
                     <?php else: ?>
@@ -132,6 +141,7 @@
 
                                 <td class="px-2 py-2">{{ $order->sender_name ?? '—' }}</td>
                                 <td class="px-2 py-2">{{ $order->buyer_name ?? '—' }}</td>
+                                <td class="px-2 py-2 font-mono">{{ $order->buyer_phone ?? '—' }}</td>
                                 <td class="px-2 py-2 font-mono">{{ $skuDisplay ?: '—' }}</td>
 
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($firstSellingPrice ?? 0) }}</td>
@@ -176,8 +186,17 @@
                                     <?php endif; ?>
                                 </td>
 
-                                <td class="px-2 py-2 text-right">
+                                <td class="px-2 py-2 text-right whitespace-nowrap">
                                     <a href="{{ route('orders.show', $order) }}" class="text-indigo-600 hover:underline">Detail</a>
+                                    <span class="text-gray-300">·</span>
+                                    <a href="{{ route('orders.edit', $order) }}" class="text-sky-600 hover:underline">Edit</a>
+                                    <span class="text-gray-300">·</span>
+                                    <form method="POST" action="{{ route('orders.destroy', $order) }}" class="inline"
+                                          onsubmit="return confirm('Hapus pesanan {{ $order->resi_number }}?');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="text-red-600 hover:underline">Hapus</button>
+                                    </form>
                                 </td>
                             </tr>
                         <?php endforeach; ?>

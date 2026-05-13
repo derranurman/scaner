@@ -69,6 +69,7 @@ class PdfImportController extends Controller
                 'barang_keyword' => $page['barang_keyword'],
                 'seller_note' => $page['seller_note'],
                 'raw_text' => $page['raw_text'] ?? null,
+                'product_rows' => $page['product_rows'] ?? [],
                 'items' => $resolution['items'],
                 'warnings' => $resolution['warnings'],
                 'matched_keyword' => $resolution['matchedKeyword'],

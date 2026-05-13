@@ -7,6 +7,7 @@ use App\Models\PlatformDeduction;
 use App\Services\OrderMetricsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class OrderController extends Controller
@@ -71,6 +72,44 @@ class OrderController extends Controller
         ]);
     }
 
+    public function create(): View
+    {
+        $platforms = PlatformDeduction::where('is_active', true)
+            ->orderBy('platform_name')
+            ->get(['id', 'platform_name']);
+
+        return view('orders.create', compact('platforms'));
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $data = $this->validateOrder($request);
+
+        $order = Order::create($data);
+
+        return redirect()->route('orders.index')
+            ->with('success', "Pesanan {$order->resi_number} berhasil dibuat.");
+    }
+
+    public function edit(Order $order): View
+    {
+        $platforms = PlatformDeduction::where('is_active', true)
+            ->orderBy('platform_name')
+            ->get(['id', 'platform_name']);
+
+        return view('orders.edit', compact('order', 'platforms'));
+    }
+
+    public function update(Request $request, Order $order): RedirectResponse
+    {
+        $data = $this->validateOrder($request, $order);
+
+        $order->update($data);
+
+        return redirect()->route('orders.index')
+            ->with('success', "Pesanan {$order->resi_number} berhasil diperbarui.");
+    }
+
     public function destroy(Order $order): RedirectResponse
     {
         if ($order->status === Order::STATUS_PACKED) {
@@ -95,5 +134,37 @@ class OrderController extends Controller
         $order->update($data);
 
         return back()->with('success', "Pesanan {$order->resi_number} diperbarui.");
+    }
+
+    /**
+     * Shared validation untuk create & update order.
+     *
+     * @return array<string, mixed>
+     */
+    private function validateOrder(Request $request, ?Order $existing = null): array
+    {
+        $resiRule = [
+            'required', 'string', 'max:32',
+            Rule::unique('orders', 'resi_number')->ignore($existing?->id),
+        ];
+
+        return $request->validate([
+            'resi_number' => $resiRule,
+            'tiktok_order_id' => ['nullable', 'string', 'max:64'],
+            'courier' => ['nullable', 'string', 'max:20'],
+            'buyer_name' => ['nullable', 'string', 'max:150'],
+            'buyer_phone' => ['nullable', 'string', 'max:30'],
+            'sender_name' => ['nullable', 'string', 'max:150'],
+            'host_live' => ['nullable', 'string', 'max:100'],
+            'platform_deduction_id' => ['nullable', 'integer', 'exists:platform_deductions,id'],
+            'shipping_address' => ['nullable', 'string'],
+            'status' => ['nullable', Rule::in([
+                Order::STATUS_PENDING,
+                Order::STATUS_PACKED,
+                Order::STATUS_CANCELLED,
+            ])],
+            'order_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string'],
+        ]);
     }
 }

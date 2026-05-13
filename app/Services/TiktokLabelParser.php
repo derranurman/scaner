@@ -334,6 +334,20 @@ class TiktokLabelParser
     }
 
     /**
+     * TikTok: tabel "Product Name SKU Seller SKU Qty".
+     *
+     * Dua layout didukung:
+     *  - Inline: "Stir Racing  R14  Coklat,Stir+Bosskit  1"
+     *    (kolom dipisah 2+ spasi, qty di ujung baris yang sama)
+     *  - Multi-line: tiap kolom bisa wrap ke beberapa baris, qty
+     *    berdiri sendiri di satu baris. Contoh:
+     *       Stir Racing GAZOO RACING Ring    <- name part 1
+     *       14 & +Bosskit                     <- name part 2
+     *       Coklat,                            <- seller_sku part 1
+     *       Stir+Bossk                         <- seller_sku part 2
+     *       it                                 <- mid-word wrap
+     *       1                                  <- qty (baris sendiri)
+     *
      * @return array<int, array<string, mixed>>
      */
     private function extractTiktokProductRows(string $text): array
@@ -347,6 +361,24 @@ class TiktokLabelParser
         }
 
         $block = trim($m[1]);
+
+        // Coba parser multiline dulu (tahan wrap + qty di baris sendiri)
+        $rows = $this->parseTiktokMultilineRows($block);
+
+        if (empty($rows)) {
+            $rows = $this->parseTiktokInlineRows($block);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Parser TikTok legacy: qty di ujung baris yang sama, kolom dipisah 2+ spasi.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseTiktokInlineRows(string $block): array
+    {
         $lines = array_values(array_filter(array_map('trim', explode("\n", $block))));
 
         $rows = [];
@@ -375,20 +407,199 @@ class TiktokLabelParser
     }
 
     /**
+     * Parser TikTok multi-line: qty terletak di baris sendiri, nama dan
+     * seller_sku dapat tersebar di beberapa baris. Beda dengan Shopee,
+     * TikTok tidak punya nomor urut baris.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseTiktokMultilineRows(string $block): array
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), fn ($l) => $l !== ''));
+        if (empty($lines)) {
+            return [];
+        }
+
+        $rows = [];
+        $buffer = [];
+
+        foreach ($lines as $line) {
+            // Pure-digit line = qty di baris sendiri → flush buffer sebagai row.
+            if (preg_match('/^(\d{1,4})$/', $line)) {
+                if (! empty($buffer)) {
+                    $qty = (int) $line;
+                    $row = $this->buildTiktokRowFromBuffer($buffer, $qty, false);
+                    if ($row !== null) {
+                        $rows[] = $row;
+                    }
+                    $buffer = [];
+                }
+                continue;
+            }
+
+            $buffer[] = $line;
+        }
+
+        // Flush sisa buffer: baris terakhir berakhir " <digit>" (qty inline).
+        //   Kasus: seller_sku + qty ada di baris terakhir yang sama.
+        //   Contoh layout label ini:
+        //     Stir Racing New Skeleton Import   <- nama part 1
+        //     R14" Black                         <- nama part 2
+        //     Stir Aja 1                         <- seller_sku + qty
+        if (! empty($buffer)) {
+            $lastLine = end($buffer);
+            if (preg_match('/^(.+?)\s+(\d{1,4})$/', $lastLine, $inlineMatch)) {
+                $qty = (int) $inlineMatch[2];
+                $buffer[array_key_last($buffer)] = trim($inlineMatch[1]);
+                $row = $this->buildTiktokRowFromBuffer($buffer, $qty, true);
+                if ($row !== null) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Susun row TikTok dari buffer baris-konten + qty.
+     *
+     * $qtyWasInline menandakan qty ter-split dari ujung baris terakhir buffer.
+     * Ketika TRUE, baris terakhir buffer dianggap sebagai seller_sku (kolom
+     * terakhir) dan baris-baris di atasnya adalah product_name. Ini meng-
+     * cover layout di mana SKU kosong & seller_sku cukup pendek sehingga
+     * tampil di baris yang sama dengan qty (mis. "Stir Aja 1").
+     *
+     * Ketika FALSE (qty berdiri di baris sendiri), pakai heuristik koma:
+     * baris pertama yang mengandung ',' = awal seller_sku.
+     *
+     * @param array<int, string> $buffer
+     * @return ?array<string, mixed>
+     */
+    private function buildTiktokRowFromBuffer(array $buffer, int $qty, bool $qtyWasInline = false): ?array
+    {
+        if (empty($buffer)) {
+            return null;
+        }
+
+        // Kasus 1-line: buffer cuma punya 1 baris → layout legacy inline,
+        //   split by 2+ spaces (kolom Product Name / SKU / Seller SKU).
+        if (count($buffer) === 1) {
+            $rest = trim($buffer[0]);
+            $cols = preg_split('/\s{2,}/', $rest) ?: [];
+            if (count($cols) >= 3) {
+                return [
+                    'product_name' => trim($cols[0]),
+                    'sku' => trim($cols[1]) ?: null,
+                    'seller_sku' => trim($cols[2]) ?: null,
+                    'quantity' => $qty,
+                    'raw_line' => $rest,
+                ];
+            }
+            // Kalau cuma 1 kolom, simpan apa adanya
+            return [
+                'product_name' => $rest,
+                'sku' => null,
+                'seller_sku' => null,
+                'quantity' => $qty,
+                'raw_line' => $rest,
+            ];
+        }
+
+        // Kasus qty inline di baris terakhir:
+        //   Baris terakhir (setelah qty di-strip) = seller_sku kolom.
+        //   Baris-baris sebelumnya = product_name.
+        // Ini cocok untuk layout label tanpa SKU dan tanpa koma di seller_sku,
+        // mis. "Stir Aja 1" (seller_sku="Stir Aja", qty=1).
+        if ($qtyWasInline) {
+            $lastContent = trim((string) end($buffer));
+            if ($lastContent !== '') {
+                $nameParts = array_slice($buffer, 0, -1);
+                $sellerSku = trim($lastContent);
+                $name = $this->smartJoinShopeeLines($nameParts);
+
+                if ($name !== '' && mb_strlen($name) >= 3) {
+                    return [
+                        'product_name' => $name,
+                        'sku' => null,
+                        'seller_sku' => $sellerSku ?: null,
+                        'quantity' => $qty,
+                        'raw_line' => trim(implode(' | ', $buffer).' | qty='.$qty),
+                    ];
+                }
+            }
+            // Fall through ke heuristik koma kalau gagal (mis. nama terlalu pendek)
+        }
+
+        // Kasus qty di baris sendiri: baris pertama yang mengandung ',' = awal
+        // seller_sku (khas TikTok: "Coklat,Stir+Bosskit").
+        $sellerSkuStart = null;
+        foreach ($buffer as $i => $line) {
+            if ($i === 0) {
+                continue; // baris pertama selalu nama
+            }
+            if (str_contains($line, ',')) {
+                $sellerSkuStart = $i;
+                break;
+            }
+        }
+
+        if ($sellerSkuStart !== null) {
+            $nameParts = array_slice($buffer, 0, $sellerSkuStart);
+            $sellerSkuParts = array_slice($buffer, $sellerSkuStart);
+        } else {
+            $nameParts = $buffer;
+            $sellerSkuParts = [];
+        }
+
+        $name = $this->smartJoinShopeeLines($nameParts);
+        $sellerSku = $this->smartJoinShopeeLines($sellerSkuParts);
+
+        if ($name === '' || mb_strlen($name) < 3) {
+            return null;
+        }
+
+        return [
+            'product_name' => $name,
+            'sku' => null,
+            'seller_sku' => $sellerSku ?: null,
+            'quantity' => $qty,
+            'raw_line' => trim(implode(' | ', $buffer).' | qty='.$qty),
+        ];
+    }
+
+    /**
      * Shopee: tabel "# Nama Produk SKU Variasi Qty".
      *
-     * Strategi baru (v2): cari anchor kuat "No.Pesanan: XXX" atau akhir halaman,
-     * lalu scan blok tengah untuk menemukan baris yang berakhir qty + diawali
-     * nomor urut. Kalau tidak ketemu dengan newline (PDF jadi 1 baris panjang),
-     * coba regex tunggal yang match "N <name...> <sku> <variasi> <qty>".
+     * Strategi multi-fallback:
+     *   (A) Blok antara header "Qty\n" dan "Pesan:" / "No.Pesanan" / \z
+     *       — paling stabil, mengatasi kasus No.Pesanan diletakkan di bawah Pesan.
+     *   (B) Blok antara "No.Pesanan: XXX" dan "Pesan:" — layout Shopee lama.
+     *   (C) Seluruh teks halaman.
+     *
+     * Setiap blok diparse dengan:
+     *   1. parseShopeeMultilineRows — qty berdiri sendiri di satu baris,
+     *      nama/SKU/variasi bisa wrap ke beberapa baris (termasuk mid-word).
+     *   2. parseShopeeRowsFromBlock — qty di ujung baris yang sama (layout lama).
+     *   3. parseShopeeSingleLine — seluruh row jadi satu baris panjang.
      *
      * @return array<int, array<string, mixed>>
      */
     private function extractShopeeProductRows(string $text): array
     {
-        // Strategi 1: cari blok antara "No.Pesanan: XXX" dan "Pesan:" (paling stabil)
+        // (A) Anchor kuat: header tabel "Qty\n" → seller-note "Pesan:" / dll.
+        //     Dipakai duluan karena No.Pesanan kadang diletakkan DI BAWAH Pesan.
         $block = null;
         if (preg_match(
+            '/\bQty\b\s*\n(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|No\.?\s*Pesanan\s*[:\-]|\z)/is',
+            $text,
+            $m
+        )) {
+            $block = $m[1];
+        }
+
+        // (B) Fallback: setelah "No.Pesanan: XXX" sampai "Pesan:" (layout lama).
+        if ($block === null && preg_match(
             '/No\.?\s*Pesanan\s*[:\-]\s*[A-Z0-9]+\s*\n?(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|\z)/is',
             $text,
             $m
@@ -396,28 +607,252 @@ class TiktokLabelParser
             $block = $m[1];
         }
 
-        // Strategi 2: blok setelah "Qty\n" (ada header tabel)
-        if ($block === null && preg_match(
-            '/\bQty\b\s*\n(.+?)(?:Pesan\s*[:\(]|Order\s*ID\s*[:\-]|\z)/is',
-            $text,
-            $m
-        )) {
-            $block = $m[1];
-        }
-
-        // Strategi 3: seluruh teks (akan difilter per baris)
+        // (C) Seluruh teks — akan difilter per baris.
         if ($block === null) {
             $block = $text;
         }
 
-        $rows = $this->parseShopeeRowsFromBlock((string) $block);
+        // Parse: multi-line (qty di baris sendiri) dulu, baru fallback ke legacy.
+        $rows = $this->parseShopeeMultilineRows((string) $block);
 
-        // Fallback terakhir: kalau tidak ada row ketemu, coba parse single-line
+        if (empty($rows)) {
+            $rows = $this->parseShopeeRowsFromBlock((string) $block);
+        }
+
+        // Fallback terakhir: teks PDF satu baris panjang tanpa newline.
         if (empty($rows)) {
             $rows = $this->parseShopeeSingleLine($text);
         }
 
         return $rows;
+    }
+
+    /**
+     * Parse block Shopee di mana tiap kolom (nama / SKU / variasi / qty) bisa
+     * wrap ke baris sendiri. Layout typical:
+     *
+     *   1Stir kayu Palang ...   <- index + nama (kadang tanpa spasi)
+     *   Ring 15 &14 inc         <- sambungan nama
+     *   R14                     <- SKU
+     *   Silver,Dus+bubl         <- variasi
+     *   e                       <- sambungan variasi (wrap mid-word)
+     *   1                       <- qty (baris sendiri)
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseShopeeMultilineRows(string $block): array
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), fn ($l) => $l !== ''));
+        if (empty($lines)) {
+            return [];
+        }
+
+        // 1. Buang baris noise yang bisa nyasar ke dalam blok produk.
+        $lines = array_values(array_filter($lines, function ($line) {
+            return ! preg_match(
+                '/^(SPXID\d+|J[XP]\d{8,}|LOP[- ]?[A-Z]?[- ]?\d+|V\s*[-]\s*\d+|ECO$|COD$|Shop$|tokopedia|Pesan\s*[:\(]|Order\s*ID\s*[:\-]|No\.?\s*Pesanan|Pengirim\s*[:\-]?|#\s*Nama\s*Produk|Nama\s*Produk\s+SKU|Variasi\s+Qty|Qty\s*Total|Batas\s*Kirim|Berat\s*[:\-])/i',
+                $line
+            );
+        }));
+
+        // 2. Split index yang nempel ke nama: "1Stir kayu..." -> ["1", "Stir kayu..."]
+        $normalized = [];
+        foreach ($lines as $line) {
+            if (preg_match('/^(\d{1,2})([A-Za-z].+)$/u', $line, $m)) {
+                $normalized[] = $m[1];
+                $normalized[] = trim($m[2]);
+            } else {
+                $normalized[] = $line;
+            }
+        }
+
+        // 3. Baca token: pure digit = batas row (index baru ATAU qty row sekarang).
+        //    Tapi kalau baris konten berakhir " <digit>" (qty inline), flush
+        //    langsung tanpa menunggu baris digit terpisah.
+        $rows = [];
+        $buffer = [];
+        $rowStarted = false;
+
+        foreach ($normalized as $line) {
+            if (preg_match('/^\d{1,3}$/', $line)) {
+                $num = (int) $line;
+
+                if (! $rowStarted && empty($buffer)) {
+                    // Awal row: angka ini adalah nomor urut.
+                    $rowStarted = true;
+                    continue;
+                }
+
+                if (! empty($buffer)) {
+                    // Angka ini adalah qty — akhiri row sekarang.
+                    $row = $this->buildShopeeRowFromBuffer($buffer, $num);
+                    if ($row !== null) {
+                        $rows[] = $row;
+                    }
+                    $buffer = [];
+                    $rowStarted = false;
+                    continue;
+                }
+
+                // Buffer kosong tapi rowStarted=true → dua angka berturut,
+                // anggap angka kedua sebagai index ulang. Skip.
+                continue;
+            }
+
+            // Cek apakah baris konten ini punya qty inline di ujung (mis. "Tombol Klakson 1")
+            // Ini terjadi ketika produk tidak punya SKU/variasi, qty langsung di ujung nama.
+            if ($rowStarted && preg_match('/^(.+?)\s+(\d{1,3})$/', $line, $inlineMatch)) {
+                $contentPart = trim($inlineMatch[1]);
+                $inlineQty = (int) $inlineMatch[2];
+
+                // Hanya anggap sebagai qty inline kalau konten sebelum angka bukan
+                // murni kode pendek (min 5 char) — supaya "Ring 15" tidak salah split.
+                // Trik: kita hanya pakai ini kalau TIDAK ada baris lain yang menyusul
+                // (artinya baris ini satu-satunya konten untuk row ini).
+                // Untuk safety, masukkan ke buffer dulu — flush di akhir loop kalau
+                // tidak ada digit terpisah menyusul.
+                $buffer[] = $line;
+                continue;
+            }
+
+            $buffer[] = $line;
+        }
+
+        // 4. Flush buffer yang tersisa: kalau buffer berisi konten dan baris terakhirnya
+        //    berakhir dengan angka (qty inline), strip qty dari baris tersebut dan flush.
+        if (! empty($buffer) && $rowStarted) {
+            $lastLine = end($buffer);
+            if (preg_match('/^(.+?)\s+(\d{1,3})$/', $lastLine, $inlineMatch)) {
+                $inlineQty = (int) $inlineMatch[2];
+                // Ganti baris terakhir buffer dengan versi tanpa qty
+                $buffer[array_key_last($buffer)] = trim($inlineMatch[1]);
+                $row = $this->buildShopeeRowFromBuffer($buffer, $inlineQty);
+                if ($row !== null) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Susun row Shopee dari buffer baris-konten + qty yang sudah diketahui.
+     *
+     * Heuristik:
+     *   - Cari baris yang "terlihat seperti SKU": token pendek alfanumerik
+     *     tanpa spasi/koma/plus, minimal 1 huruf. Baris pertama dilewati
+     *     (itu nama produk), baris terakhir juga tidak diprioritaskan.
+     *   - nama = semua baris SEBELUM SKU, digabung dengan smart-join.
+     *   - variasi = semua baris SESUDAH SKU, digabung dengan smart-join.
+     *   - Kalau SKU tidak ketemu, baris terakhir yang mengandung ',' atau '+'
+     *     dianggap variasi; sisanya nama.
+     *
+     * @param array<int, string> $buffer
+     * @return ?array<string, mixed>
+     */
+    private function buildShopeeRowFromBuffer(array $buffer, int $qty): ?array
+    {
+        if (empty($buffer)) {
+            return null;
+        }
+
+        $skuIdx = null;
+        foreach ($buffer as $i => $line) {
+            if ($i === 0) {
+                // Baris pertama = nama produk, jangan diklaim SKU.
+                continue;
+            }
+            if (mb_strlen($line) > 20) {
+                continue;
+            }
+            if (str_contains($line, ' ') || str_contains($line, ',') || str_contains($line, '+')) {
+                continue;
+            }
+            if (! preg_match('/^[A-Z0-9][A-Z0-9\-_\.]{0,14}$/i', $line)) {
+                continue;
+            }
+            if (! preg_match('/[A-Za-z]/', $line)) {
+                // Pure digits: kemungkinan sisa nomor, bukan SKU.
+                continue;
+            }
+            $skuIdx = $i;
+            break;
+        }
+
+        $sku = null;
+        if ($skuIdx !== null) {
+            $nameParts = array_slice($buffer, 0, $skuIdx);
+            $sku = $buffer[$skuIdx];
+            $variationParts = array_slice($buffer, $skuIdx + 1);
+        } else {
+            // Tidak ketemu SKU: coba pisah baris terakhir sebagai variasi
+            // kalau mengandung koma/plus (ciri khas variasi Shopee).
+            $lastIdx = count($buffer) - 1;
+            if ($lastIdx > 0 && preg_match('/[,+]/', $buffer[$lastIdx])) {
+                $nameParts = array_slice($buffer, 0, $lastIdx);
+                $variationParts = [$buffer[$lastIdx]];
+            } else {
+                $nameParts = $buffer;
+                $variationParts = [];
+            }
+        }
+
+        $name = $this->smartJoinShopeeLines($nameParts);
+        $variation = $this->smartJoinShopeeLines($variationParts);
+
+        if ($name === '' || mb_strlen($name) < 3) {
+            return null;
+        }
+
+        return [
+            'product_name' => $name,
+            'sku' => $sku ?: null,
+            'seller_sku' => $variation ?: null,
+            'quantity' => $qty,
+            'raw_line' => trim(implode(' | ', $buffer).' | qty='.$qty),
+        ];
+    }
+
+    /**
+     * Smart-join: kalau baris BERIKUTNYA sangat pendek (<=3 char) dan
+     * ekstensi mid-word yang wajar (huruf kecil, tanpa spasi/tanda baca)
+     * sementara baris sebelumnya juga berakhir dengan huruf/angka — gabung
+     * tanpa spasi (line-wrap mid-word). Selain itu, gabung dengan spasi.
+     *
+     * Contoh mid-word wrap (join tanpa spasi):
+     *   ["Silver,Dus+bubl", "e"] -> "Silver,Dus+buble"
+     *
+     * Contoh baris lanjutan biasa (join dengan spasi):
+     *   ["Kemeja batik pria modern", "lengan panjang"]
+     *     -> "Kemeja batik pria modern lengan panjang"
+     *
+     * @param array<int, string> $parts
+     */
+    private function smartJoinShopeeLines(array $parts): string
+    {
+        $parts = array_values(array_filter(array_map('trim', $parts), fn ($p) => $p !== ''));
+        if (empty($parts)) {
+            return '';
+        }
+
+        $result = $parts[0];
+        $count = count($parts);
+        for ($i = 1; $i < $count; $i++) {
+            $curr = $parts[$i];
+
+            $isMidWordWrap = preg_match('/[A-Za-z0-9]$/u', $result)
+                && mb_strlen($curr) <= 3
+                && preg_match('/^[a-z]+$/u', $curr);
+
+            if ($isMidWordWrap) {
+                $result .= $curr;
+            } else {
+                $result .= ' '.$curr;
+            }
+        }
+
+        return trim($result);
     }
 
     /**
