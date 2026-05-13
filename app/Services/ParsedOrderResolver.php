@@ -3,14 +3,23 @@
 namespace App\Services;
 
 use App\Models\ComboMapping;
+use App\Models\Product;
 use App\Models\Variant;
 
 /**
  * Ubah hasil parse PDF menjadi daftar item yang siap dibuat OrderItem,
  * dengan resolusi ke Variant lewat:
  *  1. Combo Mapping (berdasarkan teks "Barang :" atau seller_sku)
- *  2. Exact match SKU
- *  3. Case-insensitive like match untuk nama produk + varian
+ *  2. Per-row:
+ *     a. Nama produk  — cari master yang name-nya substring dari teks label
+ *        (label_name + seller_sku). Master "Skeleton Import R14" akan cocok
+ *        dengan label "Stir Racing New Skeleton Import R14 Black".
+ *     b. SKU          — exact match di Variant.sku atau Product.sku
+ *     c. Seller Note  — cari master yang name-nya substring dari seller note
+ *
+ * Untuk memilih varian saat produk sudah ketemu, dipakai kamus warna
+ * EN↔ID (Black↔Hitam dll) supaya "Black" di label bisa match varian
+ * "Hitam" di master.
  *
  * Output item:
  *   [
@@ -19,12 +28,49 @@ use App\Models\Variant;
  *     'sku' => ?string,
  *     'variant_id' => ?int,
  *     'quantity' => int,
- *     'source' => 'combo' | 'sku' | 'name' | 'unmatched',
+ *     'source' => 'combo' | 'sku' | 'name' | 'seller_note' | 'unmatched',
  *     'matched_keyword' => ?string,
  *   ]
  */
 class ParsedOrderResolver
 {
+    /**
+     * Kamus warna EN↔ID. Dipakai dua arah saat matching varian.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const COLOR_SYNONYMS = [
+        'black'  => ['hitam'],
+        'white'  => ['putih'],
+        'red'    => ['merah'],
+        'blue'   => ['biru'],
+        'green'  => ['hijau'],
+        'yellow' => ['kuning'],
+        'grey'   => ['abu', 'abu-abu', 'gray'],
+        'gray'   => ['abu', 'abu-abu', 'grey'],
+        'brown'  => ['coklat', 'cokelat'],
+        'orange' => ['oranye', 'jingga'],
+        'pink'   => ['merah muda', 'merahmuda'],
+        'purple' => ['ungu'],
+        'silver' => ['silver', 'perak'],
+        'gold'   => ['emas'],
+        'cream'  => ['krem'],
+        'navy'   => ['dongker', 'navy'],
+        'maroon' => ['marun'],
+        'hitam'  => ['black'],
+        'putih'  => ['white'],
+        'merah'  => ['red'],
+        'biru'   => ['blue'],
+        'hijau'  => ['green'],
+        'kuning' => ['yellow'],
+        'abu'    => ['grey', 'gray'],
+        'coklat' => ['brown'],
+        'cokelat'=> ['brown'],
+        'ungu'   => ['purple'],
+        'perak'  => ['silver'],
+        'emas'   => ['gold'],
+    ];
+
     /**
      * @param array<string, mixed> $parsed
      * @return array<string, mixed> { items, warnings, matched_keyword }
@@ -132,8 +178,9 @@ class ParsedOrderResolver
         }
 
         // ---- Strategi 2: tiap baris product di label
+        $sellerNote = trim((string) ($parsed['seller_note'] ?? ''));
         foreach ($parsed['product_rows'] ?? [] as $row) {
-            $resolved = $this->resolveRow($row);
+            $resolved = $this->resolveRow($row, $sellerNote);
             $items[] = $resolved;
             if ($resolved['source'] === 'unmatched') {
                 $warnings[] = "Baris produk '{$resolved['product_name']}' belum cocok dengan master. Tambahkan Combo Mapping atau padankan SKU.";
@@ -168,60 +215,220 @@ class ParsedOrderResolver
     }
 
     /**
+     * Resolve satu baris produk ke Variant master.
+     *
+     * Urutan strategi (stop di yang pertama match):
+     *   1. NAMA  — cari Product yang namanya substring dari label text
+     *              (label_name + seller_sku). Lalu pilih varian yang name-nya
+     *              cocok di label text juga (dengan kamus warna EN↔ID).
+     *   2. SKU   — exact match di Variant.sku, lalu Product.sku
+     *   3. NOTE  — cari Product yang namanya substring dari seller note
+     *
      * @param array<string, mixed> $row
      * @return array<string, mixed>
      */
-    private function resolveRow(array $row): array
+    private function resolveRow(array $row, string $sellerNote = ''): array
     {
         $qty = max(1, (int) ($row['quantity'] ?? 1));
-        $name = $row['product_name'] ?? '';
-        $sku = $row['sku'] ?? null;
-        $sellerSku = $row['seller_sku'] ?? null;
+        $name = trim((string) ($row['product_name'] ?? ''));
+        $sku = trim((string) ($row['sku'] ?? ''));
+        $sellerSku = trim((string) ($row['seller_sku'] ?? ''));
 
-        // 2a. Exact SKU
+        // Teks pencarian untuk strategi nama: nama + variasi (seller_sku)
+        // supaya "Black" dari kolom variasi ikut jadi sinyal pemilihan varian.
+        $labelText = trim($name.' '.$sellerSku);
+
+        // ---- 1. Match via NAMA produk ----
+        $byName = $this->matchByProductName($labelText);
+        if ($byName !== null) {
+            return $this->makeItem($byName, $name, $qty, 'name');
+        }
+
+        // ---- 2. Match via SKU (exact) ----
         foreach ([$sku, $sellerSku] as $candidate) {
-            if ($candidate) {
-                $v = Variant::where('sku', $candidate)->first();
-                if ($v) {
-                    return [
-                        'product_name' => $v->product?->name ?? $name,
-                        'variant_name' => $v->name,
-                        'sku' => $v->sku,
-                        'variant_id' => $v->id,
-                        'quantity' => $qty,
-                        'source' => 'sku',
-                        'matched_keyword' => null,
-                    ];
+            if ($candidate === '') {
+                continue;
+            }
+            // 2a. Variant.sku
+            $v = Variant::where('sku', $candidate)->first();
+            if ($v) {
+                return $this->makeItem($v, $name, $qty, 'sku');
+            }
+            // 2b. Product.sku → ambil varian pertama / yang cocok warnanya
+            $product = Product::where('sku', $candidate)->first();
+            if ($product) {
+                $variant = $this->pickVariantForLabel($product, $labelText);
+                if ($variant) {
+                    return $this->makeItem($variant, $name, $qty, 'sku');
                 }
             }
         }
 
-        // 2b. Name + variant match (coba SKU teks yang muncul sebagai nama varian)
-        if ($name) {
-            $variantHint = $sku ?: $sellerSku;
-            $v = Variant::whereHas('product', fn ($q) => $q->where('name', 'like', "%{$name}%"))
-                ->when($variantHint, fn ($q) => $q->where('name', 'like', "%{$variantHint}%"))
-                ->first();
-            if ($v) {
-                return [
-                    'product_name' => $v->product?->name ?? $name,
-                    'variant_name' => $v->name,
-                    'sku' => $v->sku,
-                    'variant_id' => $v->id,
-                    'quantity' => $qty,
-                    'source' => 'name',
-                    'matched_keyword' => null,
-                ];
+        // ---- 3. Match via SELLER NOTE ----
+        if ($sellerNote !== '') {
+            $byNote = $this->matchByProductName($sellerNote);
+            if ($byNote !== null) {
+                return $this->makeItem($byNote, $name, $qty, 'seller_note');
             }
         }
 
+        // Fallback: unmatched
         return [
             'product_name' => $name ?: '—',
-            'variant_name' => $sku ?: $sellerSku,
-            'sku' => $sku,
+            'variant_name' => $sellerSku ?: ($sku ?: null),
+            'sku' => $sku ?: null,
             'variant_id' => null,
             'quantity' => $qty,
             'source' => 'unmatched',
+            'matched_keyword' => null,
+        ];
+    }
+
+    /**
+     * Cari Variant berdasarkan nama produk master yang menjadi substring dari
+     * $labelText. Priority terpanjang menang (supaya "Skeleton Import R14"
+     * menang atas "Skeleton Import").
+     *
+     * Untuk produk yang ketemu, pilih varian yang paling cocok dengan
+     * $labelText (match warna EN↔ID + nama varian biasa).
+     */
+    private function matchByProductName(string $labelText): ?Variant
+    {
+        $labelText = trim($labelText);
+        if ($labelText === '' || mb_strlen($labelText) < 3) {
+            return null;
+        }
+
+        $labelLower = mb_strtolower($labelText);
+
+        // Hanya produk aktif. Urutkan nama terpanjang dulu (more specific wins).
+        $products = Product::with('variants')
+            ->where('is_active', true)
+            ->get()
+            ->sortByDesc(fn ($p) => mb_strlen((string) $p->name));
+
+        foreach ($products as $product) {
+            $pname = trim((string) $product->name);
+            if ($pname === '' || mb_strlen($pname) < 3) {
+                continue;
+            }
+
+            if (! str_contains($labelLower, mb_strtolower($pname))) {
+                continue;
+            }
+
+            // Produk cocok. Pilih varian yang paling match dengan label.
+            $variant = $this->pickVariantForLabel($product, $labelText);
+            if ($variant) {
+                return $variant;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Pilih varian dari $product yang namanya paling cocok dengan $labelText.
+     * Pakai kamus warna EN↔ID supaya "Black" match varian "Hitam".
+     * Kalau tidak ada yang match, kembalikan varian pertama (supaya produk
+     * yang hanya punya 1 varian tetap ketangkap).
+     */
+    private function pickVariantForLabel(Product $product, string $labelText): ?Variant
+    {
+        $variants = $product->variants;
+        if ($variants->isEmpty()) {
+            return null;
+        }
+
+        $labelLower = mb_strtolower($labelText);
+
+        // Skor tiap varian: jumlah token varian yang ketemu di label.
+        //   - Exact substring match = 2 poin
+        //   - Synonym match (Black↔Hitam) = 2 poin
+        $best = null;
+        $bestScore = 0;
+
+        foreach ($variants as $v) {
+            $vname = trim((string) $v->name);
+            if ($vname === '') {
+                continue;
+            }
+
+            $score = 0;
+
+            // 1. Exact substring nama varian
+            $vLower = mb_strtolower($vname);
+            if ($vLower !== '' && str_contains($labelLower, $vLower)) {
+                $score += 2;
+            }
+
+            // 2. Split nama varian jadi token, tiap token dicek di label
+            //    (dengan synonym). Contoh varian "Hitam Doff" → cek "Hitam" dan
+            //    "Doff" satu-satu.
+            $tokens = preg_split('/[\s,\/\-_]+/u', $vLower) ?: [];
+            foreach ($tokens as $token) {
+                $token = trim($token);
+                if (mb_strlen($token) < 2) {
+                    continue;
+                }
+                if (str_contains($labelLower, $token)) {
+                    $score += 1;
+                    continue;
+                }
+                // Cek synonym (warna EN↔ID)
+                foreach ($this->synonymsFor($token) as $syn) {
+                    if (str_contains($labelLower, mb_strtolower($syn))) {
+                        $score += 2;
+                        break;
+                    }
+                }
+            }
+
+            // 3. Match via SKU varian di label text
+            if ($v->sku && str_contains($labelLower, mb_strtolower($v->sku))) {
+                $score += 3;
+            }
+
+            if ($score > $bestScore) {
+                $best = $v;
+                $bestScore = $score;
+            }
+        }
+
+        // Kalau tidak ada yang match dan produk hanya punya 1 varian, pakai itu.
+        if ($best === null && $variants->count() === 1) {
+            return $variants->first();
+        }
+
+        return $best;
+    }
+
+    /**
+     * Kembalikan daftar sinonim untuk sebuah token warna (case-insensitive).
+     *
+     * @return array<int, string>
+     */
+    private function synonymsFor(string $token): array
+    {
+        $key = mb_strtolower($token);
+
+        return self::COLOR_SYNONYMS[$key] ?? [];
+    }
+
+    /**
+     * Susun item output dari Variant yang ketemu.
+     *
+     * @return array<string, mixed>
+     */
+    private function makeItem(Variant $v, string $fallbackName, int $qty, string $source): array
+    {
+        return [
+            'product_name' => $v->product?->name ?? ($fallbackName ?: '—'),
+            'variant_name' => $v->name,
+            'sku' => $v->sku,
+            'variant_id' => $v->id,
+            'quantity' => $qty,
+            'source' => $source,
             'matched_keyword' => null,
         ];
     }

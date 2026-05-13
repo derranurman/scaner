@@ -119,10 +119,11 @@
                                         <?php
                                             $source = $item['source'] ?? 'unmatched';
                                             $sourceBadge = match ($source) {
-                                                'combo' => ['combo', 'bg-indigo-100 text-indigo-700'],
-                                                'sku'   => ['SKU match', 'bg-green-100 text-green-700'],
-                                                'name'  => ['nama match', 'bg-sky-100 text-sky-700'],
-                                                default => ['perlu mapping', 'bg-red-100 text-red-700'],
+                                                'combo'       => ['combo', 'bg-indigo-100 text-indigo-700'],
+                                                'sku'         => ['SKU match', 'bg-green-100 text-green-700'],
+                                                'name'        => ['nama match', 'bg-sky-100 text-sky-700'],
+                                                'seller_note' => ['seller note', 'bg-purple-100 text-purple-700'],
+                                                default       => ['perlu mapping', 'bg-red-100 text-red-700'],
                                             };
                                         ?>
                                         <li class="py-1 flex items-center gap-2 flex-wrap">
