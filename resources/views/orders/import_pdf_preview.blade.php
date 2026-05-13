@@ -77,31 +77,90 @@
                                     <span class="badge bg-indigo-100 text-indigo-700">Combo: {{ $entry['matched_keyword'] }}</span>
                                 <?php endif; ?>
                             </div>
-                            <div class="text-sm text-gray-700 mt-1">
-                                {{ $entry['buyer_name'] ?? '—' }}
+
+                            {{-- Info mentah dari label PDF (bukan hasil resolusi) --}}
+                            <dl class="mt-2 text-xs space-y-1">
+                                <div class="flex">
+                                    <dt class="w-28 text-gray-500 shrink-0">Pengirim</dt>
+                                    <dd class="font-medium">{{ $entry['sender_name'] ?? '—' }}</dd>
+                                </div>
+                                <div class="flex">
+                                    <dt class="w-28 text-gray-500 shrink-0">Resi</dt>
+                                    <dd class="font-mono font-semibold">{{ $entry['resi_number'] ?: '—' }}</dd>
+                                </div>
+                                <div class="flex">
+                                    <dt class="w-28 text-gray-500 shrink-0">Order ID</dt>
+                                    <dd class="font-mono">{{ $entry['tiktok_order_id'] ?? '—' }}</dd>
+                                </div>
+                                <div class="flex items-start">
+                                    <dt class="w-28 text-gray-500 shrink-0">Product Name</dt>
+                                    <dd class="flex-1">
+                                        <?php $pRows = $entry['product_rows'] ?? []; ?>
+                                        <?php if (empty($pRows)): ?>
+                                            <span class="text-gray-400">—</span>
+                                        <?php else: ?>
+                                            <ul class="space-y-0.5">
+                                                <?php foreach ($pRows as $pr): ?>
+                                                    <li>{{ $pr['product_name'] ?? '—' }}</li>
+                                                <?php endforeach; ?>
+                                            </ul>
+                                        <?php endif; ?>
+                                    </dd>
+                                </div>
+                                <?php if (!empty($entry['barang_keyword'])): ?>
+                                    <div class="flex">
+                                        <dt class="w-28 text-gray-500 shrink-0">Jumlah &amp; Barang</dt>
+                                        <?php
+                                            $totalLabelQty = 0;
+                                            foreach ($pRows as $pr) {
+                                                $totalLabelQty += (int) ($pr['quantity'] ?? 0);
+                                            }
+                                            if ($totalLabelQty <= 0) $totalLabelQty = 1;
+                                        ?>
+                                        <dd><span class="font-medium">{{ $totalLabelQty }}pcs</span>, {{ $entry['barang_keyword'] }}</dd>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="flex items-start">
+                                    <dt class="w-28 text-gray-500 shrink-0">SKU</dt>
+                                    <dd class="flex-1 font-mono">
+                                        <?php
+                                            $skuParts = [];
+                                            foreach ($pRows as $pr) {
+                                                if (!empty($pr['sku'])) $skuParts[] = $pr['sku'];
+                                                elseif (!empty($pr['seller_sku'])) $skuParts[] = $pr['seller_sku'];
+                                            }
+                                            $skuJoined = implode(' · ', array_unique($skuParts));
+                                        ?>
+                                        {{ $skuJoined !== '' ? $skuJoined : '—' }}
+                                    </dd>
+                                </div>
+                                <div class="flex items-start">
+                                    <dt class="w-28 text-gray-500 shrink-0">Seller Note</dt>
+                                    <dd class="flex-1">
+                                        <?php if (!empty($entry['seller_note'])): ?>
+                                            <span class="font-mono font-semibold text-indigo-600">{{ $entry['seller_note'] }}</span>
+                                        <?php else: ?>
+                                            <span class="text-gray-400">—</span>
+                                        <?php endif; ?>
+                                    </dd>
+                                </div>
+                            </dl>
+
+                            {{-- Penerima & alamat (secondary, lebih redup) --}}
+                            <div class="mt-2 text-xs text-gray-600">
+                                Penerima: <span class="font-medium">{{ $entry['buyer_name'] ?? '—' }}</span>
                                 <?php if (!empty($entry['buyer_phone'])): ?>
                                     &middot; <span class="text-gray-500">{{ $entry['buyer_phone'] }}</span>
                                 <?php endif; ?>
                             </div>
-                            <div class="text-xs text-gray-500">{{ $entry['shipping_address'] ?? '—' }}</div>
-                            <div class="text-xs text-gray-400 mt-1">
-                                Order ID: {{ $entry['tiktok_order_id'] ?? '—' }} &middot;
-                                {{ $entry['courier'] }} &middot;
-                                {{ $entry['weight'] ?? '—' }} &middot;
-                                {{ $entry['order_date'] ?? '—' }}
+                            <?php if (!empty($entry['shipping_address'])): ?>
+                                <div class="text-[11px] text-gray-500">{{ $entry['shipping_address'] }}</div>
+                            <?php endif; ?>
+                            <div class="text-[11px] text-gray-400 mt-1">
+                                {{ $entry['courier'] }} &middot; {{ $entry['weight'] ?? '—' }} &middot; {{ $entry['order_date'] ?? '—' }}
                             </div>
-                            <?php if (!empty($entry['barang_keyword'])): ?>
-                                <div class="text-xs text-gray-500 mt-1">
-                                    Barang di label: <span class="font-mono">{{ $entry['barang_keyword'] }}</span>
-                                </div>
-                            <?php endif; ?>
-                            <?php if (!empty($entry['seller_note'])): ?>
-                                <div class="text-xs text-gray-500 mt-1">
-                                    Seller Note: <span class="font-mono font-semibold text-indigo-600">{{ $entry['seller_note'] }}</span>
-                                </div>
-                            <?php endif; ?>
 
-                            <?php if (!empty($entry['raw_text'] ?? null) || !empty($entry['items']) === false): ?>
+                            <?php if (!empty($entry['raw_text'] ?? null) || empty($entry['items'])): ?>
                                 <details class="mt-2">
                                     <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-700">Lihat Teks Mentah PDF (debug)</summary>
                                     <pre class="mt-1 text-[10px] bg-gray-50 border border-gray-200 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-gray-600">{{ $entry['raw_text'] ?? '(tidak tersimpan)' }}</pre>
