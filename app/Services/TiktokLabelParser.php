@@ -334,6 +334,20 @@ class TiktokLabelParser
     }
 
     /**
+     * TikTok: tabel "Product Name SKU Seller SKU Qty".
+     *
+     * Dua layout didukung:
+     *  - Inline: "Stir Racing  R14  Coklat,Stir+Bosskit  1"
+     *    (kolom dipisah 2+ spasi, qty di ujung baris yang sama)
+     *  - Multi-line: tiap kolom bisa wrap ke beberapa baris, qty
+     *    berdiri sendiri di satu baris. Contoh:
+     *       Stir Racing GAZOO RACING Ring    <- name part 1
+     *       14 & +Bosskit                     <- name part 2
+     *       Coklat,                            <- seller_sku part 1
+     *       Stir+Bossk                         <- seller_sku part 2
+     *       it                                 <- mid-word wrap
+     *       1                                  <- qty (baris sendiri)
+     *
      * @return array<int, array<string, mixed>>
      */
     private function extractTiktokProductRows(string $text): array
@@ -347,6 +361,24 @@ class TiktokLabelParser
         }
 
         $block = trim($m[1]);
+
+        // Coba parser multiline dulu (tahan wrap + qty di baris sendiri)
+        $rows = $this->parseTiktokMultilineRows($block);
+
+        if (empty($rows)) {
+            $rows = $this->parseTiktokInlineRows($block);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Parser TikTok legacy: qty di ujung baris yang sama, kolom dipisah 2+ spasi.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseTiktokInlineRows(string $block): array
+    {
         $lines = array_values(array_filter(array_map('trim', explode("\n", $block))));
 
         $rows = [];
@@ -372,6 +404,136 @@ class TiktokLabelParser
         }
 
         return $rows;
+    }
+
+    /**
+     * Parser TikTok multi-line: qty terletak di baris sendiri, nama dan
+     * seller_sku dapat tersebar di beberapa baris. Beda dengan Shopee,
+     * TikTok tidak punya nomor urut baris.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseTiktokMultilineRows(string $block): array
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $block)), fn ($l) => $l !== ''));
+        if (empty($lines)) {
+            return [];
+        }
+
+        $rows = [];
+        $buffer = [];
+
+        foreach ($lines as $line) {
+            // Pure-digit line = qty → flush current buffer sebagai row.
+            if (preg_match('/^(\d{1,4})$/', $line)) {
+                if (! empty($buffer)) {
+                    $qty = (int) $line;
+                    $row = $this->buildTiktokRowFromBuffer($buffer, $qty);
+                    if ($row !== null) {
+                        $rows[] = $row;
+                    }
+                    $buffer = [];
+                }
+                continue;
+            }
+
+            $buffer[] = $line;
+        }
+
+        // Flush sisa buffer kalau baris terakhir berakhir <spasi><digit>
+        // (kasus qty inline tanpa baris digit terpisah).
+        if (! empty($buffer)) {
+            $lastLine = end($buffer);
+            if (preg_match('/^(.+?)\s+(\d{1,4})$/', $lastLine, $inlineMatch)) {
+                $qty = (int) $inlineMatch[2];
+                $buffer[array_key_last($buffer)] = trim($inlineMatch[1]);
+                $row = $this->buildTiktokRowFromBuffer($buffer, $qty);
+                if ($row !== null) {
+                    $rows[] = $row;
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Susun row TikTok dari buffer baris-konten + qty.
+     *
+     * Heuristik split name / seller_sku:
+     *   - Seller SKU khas TikTok mengandung ','  (mis. "Coklat,Stir+Bosskit")
+     *   - Nama produk jarang punya koma standalone
+     *   - Cari baris pertama (selain baris 0) yang mengandung ',' → itu awal
+     *     seller_sku. Baris 0 selalu nama.
+     *
+     * @param array<int, string> $buffer
+     * @return ?array<string, mixed>
+     */
+    private function buildTiktokRowFromBuffer(array $buffer, int $qty): ?array
+    {
+        if (empty($buffer)) {
+            return null;
+        }
+
+        // Kasus 1-line: buffer cuma punya 1 baris → layout legacy inline,
+        //   split by 2+ spaces (kolom Product Name / SKU / Seller SKU).
+        if (count($buffer) === 1) {
+            $rest = trim($buffer[0]);
+            $cols = preg_split('/\s{2,}/', $rest) ?: [];
+            if (count($cols) >= 3) {
+                return [
+                    'product_name' => trim($cols[0]),
+                    'sku' => trim($cols[1]) ?: null,
+                    'seller_sku' => trim($cols[2]) ?: null,
+                    'quantity' => $qty,
+                    'raw_line' => $rest,
+                ];
+            }
+            // Kalau cuma 1 kolom, simpan apa adanya
+            return [
+                'product_name' => $rest,
+                'sku' => null,
+                'seller_sku' => null,
+                'quantity' => $qty,
+                'raw_line' => $rest,
+            ];
+        }
+
+        // Kasus multi-line: split name vs seller_sku berdasarkan baris
+        // pertama yang mengandung koma.
+        $sellerSkuStart = null;
+        foreach ($buffer as $i => $line) {
+            if ($i === 0) {
+                continue; // baris pertama selalu nama
+            }
+            if (str_contains($line, ',')) {
+                $sellerSkuStart = $i;
+                break;
+            }
+        }
+
+        if ($sellerSkuStart !== null) {
+            $nameParts = array_slice($buffer, 0, $sellerSkuStart);
+            $sellerSkuParts = array_slice($buffer, $sellerSkuStart);
+        } else {
+            $nameParts = $buffer;
+            $sellerSkuParts = [];
+        }
+
+        $name = $this->smartJoinShopeeLines($nameParts);
+        $sellerSku = $this->smartJoinShopeeLines($sellerSkuParts);
+
+        if ($name === '' || mb_strlen($name) < 3) {
+            return null;
+        }
+
+        return [
+            'product_name' => $name,
+            'sku' => null,
+            'seller_sku' => $sellerSku ?: null,
+            'quantity' => $qty,
+            'raw_line' => trim(implode(' | ', $buffer).' | qty='.$qty),
+        ];
     }
 
     /**
