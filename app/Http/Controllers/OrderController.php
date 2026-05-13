@@ -112,13 +112,12 @@ class OrderController extends Controller
 
     public function destroy(Order $order): RedirectResponse
     {
-        if ($order->status === Order::STATUS_PACKED) {
-            return back()->with('error', 'Pesanan yang sudah di-packing tidak bisa dihapus.');
-        }
-
+        // Admin bisa hapus pesanan apapun, termasuk yang sudah packed.
+        $resi = $order->resi_number;
         $order->delete();
 
-        return redirect()->route('orders.index')->with('success', 'Pesanan dihapus.');
+        return redirect()->route('orders.index')
+            ->with('success', "Pesanan {$resi} dihapus.");
     }
 
     /**
