@@ -177,13 +177,18 @@
                                 <td class="px-2 py-2 text-right font-mono font-semibold text-red-600">{{ $fmt($m['total_potongan_aplikasi']) }}</td>
 
                                 <td class="px-2 py-2">
-                                    <?php if ($order->status === 'pending'): ?>
-                                        <span class="badge bg-amber-100 text-amber-700">Pending</span>
-                                    <?php elseif ($order->status === 'packed'): ?>
-                                        <span class="badge bg-green-100 text-green-700">Packed</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-gray-100 text-gray-600">Cancelled</span>
-                                    <?php endif; ?>
+                                    <form method="POST" action="{{ route('orders.update_status', $order) }}" class="inline">
+                                        @csrf
+                                        <select name="status" onchange="this.form.submit()"
+                                                class="text-xs rounded border px-2 py-1 font-semibold
+                                                    {{ $order->status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300' : '' }}
+                                                    {{ $order->status === 'packed' ? 'bg-green-100 text-green-700 border-green-300' : '' }}
+                                                    {{ $order->status === 'cancelled' ? 'bg-gray-100 text-gray-600 border-gray-300' : '' }}">
+                                            <option value="pending" {{ $order->status === 'pending' ? 'selected' : '' }}>Pending</option>
+                                            <option value="packed" {{ $order->status === 'packed' ? 'selected' : '' }}>Packed</option>
+                                            <option value="cancelled" {{ $order->status === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
+                                        </select>
+                                    </form>
                                 </td>
 
                                 <td class="px-2 py-2 text-right whitespace-nowrap">

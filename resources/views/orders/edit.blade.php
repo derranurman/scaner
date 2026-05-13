@@ -9,7 +9,7 @@
         <form method="POST" action="{{ route('orders.update', $order) }}">
             @csrf
             @method('PUT')
-            @include('orders._form', ['order' => $order, 'platforms' => $platforms])
+            @include('orders._form', ['order' => $order, 'platforms' => $platforms, 'products' => $products])
 
             <div class="mt-6 flex justify-between gap-2">
                 <form method="POST" action="{{ route('orders.destroy', $order) }}"

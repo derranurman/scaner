@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\PlatformDeduction;
+use App\Models\Product;
+use App\Models\Variant;
 use App\Services\OrderMetricsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,7 +80,9 @@ class OrderController extends Controller
             ->orderBy('platform_name')
             ->get(['id', 'platform_name']);
 
-        return view('orders.create', compact('platforms'));
+        $products = Product::with('variants')->where('is_active', true)->get();
+
+        return view('orders.create', compact('platforms', 'products'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -87,17 +91,24 @@ class OrderController extends Controller
 
         $order = Order::create($data);
 
+        // Save order items based on kelengkapan selection
+        $this->saveOrderItems($request, $order);
+
         return redirect()->route('orders.index')
             ->with('success', "Pesanan {$order->resi_number} berhasil dibuat.");
     }
 
     public function edit(Order $order): View
     {
+        $order->load('items.variant.product');
+
         $platforms = PlatformDeduction::where('is_active', true)
             ->orderBy('platform_name')
             ->get(['id', 'platform_name']);
 
-        return view('orders.edit', compact('order', 'platforms'));
+        $products = Product::with('variants')->where('is_active', true)->get();
+
+        return view('orders.edit', compact('order', 'platforms', 'products'));
     }
 
     public function update(Request $request, Order $order): RedirectResponse
@@ -105,6 +116,9 @@ class OrderController extends Controller
         $data = $this->validateOrder($request, $order);
 
         $order->update($data);
+
+        // Re-save order items based on kelengkapan selection
+        $this->saveOrderItems($request, $order);
 
         return redirect()->route('orders.index')
             ->with('success', "Pesanan {$order->resi_number} berhasil diperbarui.");
@@ -119,6 +133,24 @@ class OrderController extends Controller
         $order->delete();
 
         return redirect()->route('orders.index')->with('success', 'Pesanan dihapus.');
+    }
+
+    /**
+     * Update status pesanan secara inline (tanpa hapus).
+     */
+    public function updateStatus(Request $request, Order $order): RedirectResponse
+    {
+        $data = $request->validate([
+            'status' => ['required', Rule::in([
+                Order::STATUS_PENDING,
+                Order::STATUS_PACKED,
+                Order::STATUS_CANCELLED,
+            ])],
+        ]);
+
+        $order->update(['status' => $data['status']]);
+
+        return back()->with('success', "Status pesanan {$order->resi_number} diubah menjadi {$data['status']}.");
     }
 
     /**
@@ -166,5 +198,69 @@ class OrderController extends Controller
             'order_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],
         ]);
+    }
+
+    /**
+     * Simpan order items berdasarkan pilihan kelengkapan.
+     */
+    private function saveOrderItems(Request $request, Order $order): void
+    {
+        $kelengkapan = $request->input('kelengkapan');
+        if (! $kelengkapan) {
+            return;
+        }
+
+        $kelengkapanLabels = [
+            '1' => 'Stir Saja',
+            '2' => 'Stir + Boskit',
+            '3' => 'Stir + Boskit + Spion',
+        ];
+
+        $qty = max(1, (int) $request->input('item_quantity', 1));
+
+        // Collect variant IDs based on kelengkapan level
+        $variantIds = [];
+        if (in_array($kelengkapan, ['1', '2', '3'])) {
+            $variantIds[] = $request->input('variant_stir');
+        }
+        if (in_array($kelengkapan, ['2', '3'])) {
+            $variantIds[] = $request->input('variant_boskit');
+        }
+        if ($kelengkapan === '3') {
+            $variantIds[] = $request->input('variant_spion');
+        }
+
+        // Filter out empty values
+        $variantIds = array_filter($variantIds);
+
+        if (empty($variantIds)) {
+            return;
+        }
+
+        // Remove existing items (for update scenario)
+        $order->items()->delete();
+
+        // Calculate total harga modal
+        $totalHargaModal = 0;
+
+        foreach ($variantIds as $variantId) {
+            $variant = Variant::with('product')->find($variantId);
+            if (! $variant) {
+                continue;
+            }
+
+            $purchasePrice = (float) ($variant->product->purchase_price ?? 0);
+            $totalHargaModal += $purchasePrice * $qty;
+
+            $order->items()->create([
+                'variant_id' => $variant->id,
+                'product_name' => $variant->product->name,
+                'variant_name' => $variant->name,
+                'sku' => $variant->sku,
+                'kelengkapan' => $kelengkapanLabels[$kelengkapan] ?? null,
+                'harga_modal' => $purchasePrice * $qty,
+                'quantity' => $qty,
+            ]);
+        }
     }
 }

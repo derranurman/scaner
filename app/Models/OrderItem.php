@@ -16,6 +16,8 @@ class OrderItem extends Model
         'product_name',
         'variant_name',
         'sku',
+        'kelengkapan',
+        'harga_modal',
         'quantity',
     ];
 
@@ -23,6 +25,7 @@ class OrderItem extends Model
     {
         return [
             'quantity' => 'integer',
+            'harga_modal' => 'decimal:2',
         ];
     }
 
