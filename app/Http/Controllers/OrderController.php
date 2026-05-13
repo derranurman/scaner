@@ -121,14 +121,23 @@ class OrderController extends Controller
     }
 
     /**
-     * Update inline Host Live & Platform dari halaman Pesanan.
+     * Update inline dari halaman Pesanan untuk field-field yang bisa di-edit
+     * langsung di tabel (Host Live, Platform, Pembeli, No. HP).
+     *
+     * Semua field optional — hanya yang ada di request yang di-update.
      */
     public function updateMeta(Request $request, Order $order): RedirectResponse
     {
-        $data = $request->validate([
+        $validated = $request->validate([
             'host_live' => ['nullable', 'string', 'max:100'],
             'platform_deduction_id' => ['nullable', 'integer', 'exists:platform_deductions,id'],
+            'buyer_name' => ['nullable', 'string', 'max:150'],
+            'buyer_phone' => ['nullable', 'string', 'max:30'],
         ]);
+
+        // Hanya update field yang benar-benar hadir di request (supaya form
+        // inline yang hanya kirim 1-2 field tidak meng-null-kan field lain).
+        $data = array_intersect_key($validated, $request->all());
 
         $order->update($data);
 
