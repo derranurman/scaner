@@ -136,6 +136,9 @@
                                                 <?php if (!empty($item['sku'])): ?>
                                                     <span class="text-xs text-gray-400 font-mono ml-1">{{ $item['sku'] }}</span>
                                                 <?php endif; ?>
+                                                <?php if (!empty($item['matched_keyword']) && $source !== 'combo'): ?>
+                                                    <div class="text-[10px] text-gray-500 mt-0.5">{{ $item['matched_keyword'] }}</div>
+                                                <?php endif; ?>
                                             </span>
                                             <span class="badge {{ $sourceBadge[1] }}">{{ $sourceBadge[0] }}</span>
                                         </li>

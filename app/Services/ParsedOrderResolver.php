@@ -241,7 +241,7 @@ class ParsedOrderResolver
         // ---- 1. Match via NAMA produk ----
         $byName = $this->matchByProductName($labelText);
         if ($byName !== null) {
-            return $this->makeItem($byName, $name, $qty, 'name');
+            return $this->makeItem($byName['variant'], $name, $qty, 'name', $byName['reason']);
         }
 
         // ---- 2. Match via SKU (exact) ----
@@ -252,14 +252,20 @@ class ParsedOrderResolver
             // 2a. Variant.sku
             $v = Variant::where('sku', $candidate)->first();
             if ($v) {
-                return $this->makeItem($v, $name, $qty, 'sku');
+                return $this->makeItem($v, $name, $qty, 'sku', "SKU: {$candidate}");
             }
             // 2b. Product.sku → ambil varian pertama / yang cocok warnanya
             $product = Product::where('sku', $candidate)->first();
             if ($product) {
-                $variant = $this->pickVariantForLabel($product, $labelText);
-                if ($variant) {
-                    return $this->makeItem($variant, $name, $qty, 'sku');
+                $pick = $this->pickVariantForLabel($product, $labelText);
+                if ($pick !== null) {
+                    return $this->makeItem(
+                        $pick['variant'],
+                        $name,
+                        $qty,
+                        'sku',
+                        "SKU: {$candidate}".($pick['reason'] ? ' · '.$pick['reason'] : '')
+                    );
                 }
             }
         }
@@ -268,7 +274,13 @@ class ParsedOrderResolver
         if ($sellerNote !== '') {
             $byNote = $this->matchByProductName($sellerNote);
             if ($byNote !== null) {
-                return $this->makeItem($byNote, $name, $qty, 'seller_note');
+                return $this->makeItem(
+                    $byNote['variant'],
+                    $name,
+                    $qty,
+                    'seller_note',
+                    'Note: '.$byNote['reason']
+                );
             }
         }
 
@@ -291,8 +303,10 @@ class ParsedOrderResolver
      *
      * Untuk produk yang ketemu, pilih varian yang paling cocok dengan
      * $labelText (match warna EN↔ID + nama varian biasa).
+     *
+     * @return array{variant: Variant, reason: string}|null
      */
-    private function matchByProductName(string $labelText): ?Variant
+    private function matchByProductName(string $labelText): ?array
     {
         $labelText = trim($labelText);
         if ($labelText === '' || mb_strlen($labelText) < 3) {
@@ -318,9 +332,12 @@ class ParsedOrderResolver
             }
 
             // Produk cocok. Pilih varian yang paling match dengan label.
-            $variant = $this->pickVariantForLabel($product, $labelText);
-            if ($variant) {
-                return $variant;
+            $pick = $this->pickVariantForLabel($product, $labelText);
+            if ($pick !== null) {
+                return [
+                    'variant' => $pick['variant'],
+                    'reason' => "Master: {$pname}".($pick['reason'] ? ' · '.$pick['reason'] : ''),
+                ];
             }
         }
 
@@ -329,24 +346,42 @@ class ParsedOrderResolver
 
     /**
      * Pilih varian dari $product yang namanya paling cocok dengan $labelText.
-     * Pakai kamus warna EN↔ID supaya "Black" match varian "Hitam".
-     * Kalau tidak ada yang match, kembalikan varian pertama (supaya produk
-     * yang hanya punya 1 varian tetap ketangkap).
+     *
+     * Scoring pakai WORD-BOUNDARY match supaya "merah" tidak asal substring
+     * dengan "racing" atau "semi merah-merahan" dst:
+     *   - Nama varian exact (word-boundary) di label: 10 poin
+     *   - Token varian (split by space/slash/dash) ketemu word-boundary: 5 poin
+     *   - Synonym warna (Black↔Hitam) ketemu word-boundary: 10 poin
+     *
+     * SKU varian TIDAK dihitung di sini — ada strategi SKU match terpisah di
+     * resolver. Ini supaya SKU yang kebetulan punya token umum ("R14") tidak
+     * bikin varian "salah" menang atas varian yang warnanya benar-benar cocok.
+     *
+     * Kalau produk hanya punya 1 varian, varian itu dipakai tanpa scoring
+     * (banyak produk master yang tidak punya pilihan varian).
+     *
+     * @return array{variant: Variant, reason: string}|null
      */
-    private function pickVariantForLabel(Product $product, string $labelText): ?Variant
+    private function pickVariantForLabel(Product $product, string $labelText): ?array
     {
         $variants = $product->variants;
         if ($variants->isEmpty()) {
             return null;
         }
 
+        // Produk dengan 1 varian saja: langsung pilih (apapun nama varian-nya).
+        if ($variants->count() === 1) {
+            return [
+                'variant' => $variants->first(),
+                'reason' => '',
+            ];
+        }
+
         $labelLower = mb_strtolower($labelText);
 
-        // Skor tiap varian: jumlah token varian yang ketemu di label.
-        //   - Exact substring match = 2 poin
-        //   - Synonym match (Black↔Hitam) = 2 poin
         $best = null;
         $bestScore = 0;
+        $bestReason = '';
 
         foreach ($variants as $v) {
             $vname = trim((string) $v->name);
@@ -355,52 +390,71 @@ class ParsedOrderResolver
             }
 
             $score = 0;
+            $reasonParts = [];
 
-            // 1. Exact substring nama varian
-            $vLower = mb_strtolower($vname);
-            if ($vLower !== '' && str_contains($labelLower, $vLower)) {
-                $score += 2;
+            // 1. Nama varian penuh (word-boundary).
+            if ($this->hasWord($labelLower, $vname)) {
+                $score += 10;
+                $reasonParts[] = $vname;
             }
 
-            // 2. Split nama varian jadi token, tiap token dicek di label
-            //    (dengan synonym). Contoh varian "Hitam Doff" → cek "Hitam" dan
-            //    "Doff" satu-satu.
-            $tokens = preg_split('/[\s,\/\-_]+/u', $vLower) ?: [];
+            // 2. Tiap token nama varian (word-boundary).
+            $tokens = preg_split('/[\s,\/\-_]+/u', mb_strtolower($vname)) ?: [];
             foreach ($tokens as $token) {
                 $token = trim($token);
                 if (mb_strlen($token) < 2) {
                     continue;
                 }
-                if (str_contains($labelLower, $token)) {
-                    $score += 1;
+                if ($this->hasWord($labelLower, $token)) {
+                    $score += 5;
                     continue;
                 }
-                // Cek synonym (warna EN↔ID)
+                // 3. Synonym warna (EN↔ID)
                 foreach ($this->synonymsFor($token) as $syn) {
-                    if (str_contains($labelLower, mb_strtolower($syn))) {
-                        $score += 2;
+                    if ($this->hasWord($labelLower, $syn)) {
+                        $score += 10;
+                        $reasonParts[] = "{$syn}→{$v->name}";
                         break;
                     }
                 }
             }
 
-            // 3. Match via SKU varian di label text
-            if ($v->sku && str_contains($labelLower, mb_strtolower($v->sku))) {
-                $score += 3;
-            }
-
             if ($score > $bestScore) {
                 $best = $v;
                 $bestScore = $score;
+                $bestReason = $reasonParts ? implode(', ', array_unique($reasonParts)) : '';
             }
         }
 
-        // Kalau tidak ada yang match dan produk hanya punya 1 varian, pakai itu.
-        if ($best === null && $variants->count() === 1) {
-            return $variants->first();
+        if ($best === null) {
+            return null;
         }
 
-        return $best;
+        return [
+            'variant' => $best,
+            'reason' => $bestReason,
+        ];
+    }
+
+    /**
+     * Cek apakah $needle muncul sebagai kata (word-boundary) di $haystack.
+     * Case-insensitive. $haystack diasumsikan sudah lowercase.
+     *
+     * Word-boundary di sini: karakter sebelum & sesudah harus bukan huruf/digit.
+     * Contoh: hasWord("stir racing new skeleton import r14\" black", "black")
+     *         → TRUE (preceded by space, followed by end)
+     *         hasWord("stir racing new skeleton", "red") → FALSE
+     */
+    private function hasWord(string $haystack, string $needle): bool
+    {
+        $needle = mb_strtolower(trim($needle));
+        if ($needle === '') {
+            return false;
+        }
+
+        $pattern = '/(?<![A-Za-z0-9])'.preg_quote($needle, '/').'(?![A-Za-z0-9])/iu';
+
+        return preg_match($pattern, $haystack) === 1;
     }
 
     /**
@@ -420,7 +474,7 @@ class ParsedOrderResolver
      *
      * @return array<string, mixed>
      */
-    private function makeItem(Variant $v, string $fallbackName, int $qty, string $source): array
+    private function makeItem(Variant $v, string $fallbackName, int $qty, string $source, ?string $reason = null): array
     {
         return [
             'product_name' => $v->product?->name ?? ($fallbackName ?: '—'),
@@ -429,7 +483,7 @@ class ParsedOrderResolver
             'variant_id' => $v->id,
             'quantity' => $qty,
             'source' => $source,
-            'matched_keyword' => null,
+            'matched_keyword' => $reason ?: null,
         ];
     }
 
