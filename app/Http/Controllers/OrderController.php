@@ -202,6 +202,16 @@ class OrderController extends Controller
 
     /**
      * Simpan order items berdasarkan pilihan kelengkapan.
+     *
+     * Kelengkapan codes:
+     *   1 = Stir Saja
+     *   2 = Stir + Boskit
+     *   3 = Boskit Saja
+     *   4 = Spoiler
+     *   5 = Klakson
+     *   6 = Stir + Stir
+     *   7 = Stir + Stir + Boskit
+     *   8 = Stir + Boskit + Boskit
      */
     private function saveOrderItems(Request $request, Order $order): void
     {
@@ -210,38 +220,39 @@ class OrderController extends Controller
             return;
         }
 
-        $kelengkapanLabels = [
-            '1' => 'Stir Saja',
-            '2' => 'Stir + Boskit',
-            '3' => 'Stir + Boskit + Spion',
+        // Mapping code -> array of request input field names (sinkron dengan form).
+        $fieldMap = [
+            '1' => ['variant_stir_1'],
+            '2' => ['variant_stir_1', 'variant_boskit_1'],
+            '3' => ['variant_boskit_1'],
+            '4' => ['variant_spoiler'],
+            '5' => ['variant_klakson'],
+            '6' => ['variant_stir_1', 'variant_stir_2'],
+            '7' => ['variant_stir_1', 'variant_stir_2', 'variant_boskit_1'],
+            '8' => ['variant_stir_1', 'variant_boskit_1', 'variant_boskit_2'],
         ];
+
+        if (! isset($fieldMap[$kelengkapan])) {
+            return;
+        }
 
         $qty = max(1, (int) $request->input('item_quantity', 1));
 
-        // Collect variant IDs based on kelengkapan level
+        // Ambil semua variant ID yang dibutuhkan dari request.
         $variantIds = [];
-        if (in_array($kelengkapan, ['1', '2', '3'])) {
-            $variantIds[] = $request->input('variant_stir');
+        foreach ($fieldMap[$kelengkapan] as $fieldName) {
+            $id = $request->input($fieldName);
+            if ($id) {
+                $variantIds[] = $id;
+            }
         }
-        if (in_array($kelengkapan, ['2', '3'])) {
-            $variantIds[] = $request->input('variant_boskit');
-        }
-        if ($kelengkapan === '3') {
-            $variantIds[] = $request->input('variant_spion');
-        }
-
-        // Filter out empty values
-        $variantIds = array_filter($variantIds);
 
         if (empty($variantIds)) {
             return;
         }
 
-        // Remove existing items (for update scenario)
+        // Remove existing items (untuk skenario update).
         $order->items()->delete();
-
-        // Calculate total harga modal
-        $totalHargaModal = 0;
 
         foreach ($variantIds as $variantId) {
             $variant = Variant::with('product')->find($variantId);
@@ -250,14 +261,14 @@ class OrderController extends Controller
             }
 
             $purchasePrice = (float) ($variant->product->purchase_price ?? 0);
-            $totalHargaModal += $purchasePrice * $qty;
 
             $order->items()->create([
                 'variant_id' => $variant->id,
                 'product_name' => $variant->product->name,
                 'variant_name' => $variant->name,
                 'sku' => $variant->sku,
-                'kelengkapan' => $kelengkapanLabels[$kelengkapan] ?? null,
+                // Simpan CODE agar bisa restore dropdown saat edit.
+                'kelengkapan' => (string) $kelengkapan,
                 'harga_modal' => $purchasePrice * $qty,
                 'quantity' => $qty,
             ]);

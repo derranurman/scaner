@@ -14,8 +14,32 @@
     $kelengkapanOptions = [
         '1' => '1 = Stir Saja',
         '2' => '2 = Stir + Boskit',
-        '3' => '3 = Stir + Boskit + Spion',
+        '3' => '3 = Boskit Saja',
+        '4' => '4 = Spoiler',
+        '5' => '5 = Klakson',
+        '6' => '6 = Stir + Stir',
+        '7' => '7 = Stir + Stir + Boskit',
+        '8' => '8 = Stir + Boskit + Boskit',
     ];
+
+    // Mapping kelengkapan => field variant yang harus ditampilkan.
+    // Harus sinkron dengan KELENGKAPAN_MAP di JavaScript & controller.
+    $kelengkapanFieldMap = [
+        '1' => ['stir_1'],
+        '2' => ['stir_1', 'boskit_1'],
+        '3' => ['boskit_1'],
+        '4' => ['spoiler'],
+        '5' => ['klakson'],
+        '6' => ['stir_1', 'stir_2'],
+        '7' => ['stir_1', 'stir_2', 'boskit_1'],
+        '8' => ['stir_1', 'boskit_1', 'boskit_2'],
+    ];
+
+    // Koleksi variant per kategori (re-use di beberapa dropdown).
+    $stirProducts = $products->where('type', 'Stir Motor')->merge($products->where('type', 'Stir Mobil'));
+    $boskitProducts = $products->where('type', 'Boskit');
+    $spoilerProducts = $products->where('type', 'Spoiler');
+    $klaksonProducts = $products->where('type', 'Klakson');
 
     // Existing items for edit mode
     $existingItems = $o ? $o->items : collect();
@@ -137,7 +161,7 @@
                 <option value="">— tidak dipilih —</option>
                 @foreach ($kelengkapanOptions as $val => $label)
                     <option value="{{ $val }}"
-                        <?php if (old('kelengkapan', $existingItems->first()?->kelengkapan ?? '') == $val) echo 'selected'; ?>>
+                        <?php if ((string) old('kelengkapan', $existingItems->first()?->kelengkapan ?? '') === (string) $val) echo 'selected'; ?>>
                         {{ $label }}
                     </option>
                 @endforeach
@@ -146,19 +170,21 @@
 
         <div>
             <label class="label">Jumlah</label>
-            <input type="number" name="item_quantity" id="item-quantity" min="1" value="{{ old('item_quantity', $existingItems->first()?->quantity ?? 1) }}"
+            <input type="number" name="item_quantity" id="item-quantity" min="1"
+                   value="{{ old('item_quantity', $existingItems->first()?->quantity ?? 1) }}"
                    class="input" placeholder="1">
         </div>
     </div>
 
     {{-- Dynamic variant fields based on kelengkapan --}}
-    <div id="kelengkapan-fields" class="mt-4 space-y-3">
-        {{-- Stir field --}}
-        <div id="field-stir" class="hidden">
-            <label class="label">Stir (Variant)</label>
-            <select name="variant_stir" class="input variant-select" data-type="stir">
+    <div id="kelengkapan-fields" class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        {{-- Stir 1 --}}
+        <div id="field-stir_1" class="kelengkapan-field hidden">
+            <label class="label">Stir 1</label>
+            <select name="variant_stir_1" class="input variant-select">
                 <option value="">— pilih stir —</option>
-                @foreach ($products->where('type', 'Stir Motor')->merge($products->where('type', 'Stir Mobil')) as $product)
+                @foreach ($stirProducts as $product)
                     @foreach ($product->variants as $variant)
                         <option value="{{ $variant->id }}" data-price="{{ $product->purchase_price }}">
                             {{ $product->name }} — {{ $variant->name }} ({{ $variant->sku }})
@@ -168,12 +194,27 @@
             </select>
         </div>
 
-        {{-- Boskit field --}}
-        <div id="field-boskit" class="hidden">
-            <label class="label">Boskit (Variant)</label>
-            <select name="variant_boskit" class="input variant-select" data-type="boskit">
+        {{-- Stir 2 --}}
+        <div id="field-stir_2" class="kelengkapan-field hidden">
+            <label class="label">Stir 2</label>
+            <select name="variant_stir_2" class="input variant-select">
+                <option value="">— pilih stir kedua —</option>
+                @foreach ($stirProducts as $product)
+                    @foreach ($product->variants as $variant)
+                        <option value="{{ $variant->id }}" data-price="{{ $product->purchase_price }}">
+                            {{ $product->name }} — {{ $variant->name }} ({{ $variant->sku }})
+                        </option>
+                    @endforeach
+                @endforeach
+            </select>
+        </div>
+
+        {{-- Boskit 1 --}}
+        <div id="field-boskit_1" class="kelengkapan-field hidden">
+            <label class="label">Boskit 1</label>
+            <select name="variant_boskit_1" class="input variant-select">
                 <option value="">— pilih boskit —</option>
-                @foreach ($products->where('type', 'Boskit') as $product)
+                @foreach ($boskitProducts as $product)
                     @foreach ($product->variants as $variant)
                         <option value="{{ $variant->id }}" data-price="{{ $product->purchase_price }}">
                             {{ $product->name }} — {{ $variant->name }} ({{ $variant->sku }})
@@ -183,12 +224,12 @@
             </select>
         </div>
 
-        {{-- Spion field --}}
-        <div id="field-spion" class="hidden">
-            <label class="label">Spion (Variant)</label>
-            <select name="variant_spion" class="input variant-select" data-type="spion">
-                <option value="">— pilih spion —</option>
-                @foreach ($products->where('type', 'Spion') as $product)
+        {{-- Boskit 2 --}}
+        <div id="field-boskit_2" class="kelengkapan-field hidden">
+            <label class="label">Boskit 2</label>
+            <select name="variant_boskit_2" class="input variant-select">
+                <option value="">— pilih boskit kedua —</option>
+                @foreach ($boskitProducts as $product)
                     @foreach ($product->variants as $variant)
                         <option value="{{ $variant->id }}" data-price="{{ $product->purchase_price }}">
                             {{ $product->name }} — {{ $variant->name }} ({{ $variant->sku }})
@@ -196,6 +237,42 @@
                     @endforeach
                 @endforeach
             </select>
+        </div>
+
+        {{-- Spoiler --}}
+        <div id="field-spoiler" class="kelengkapan-field hidden">
+            <label class="label">Spoiler</label>
+            <select name="variant_spoiler" class="input variant-select">
+                <option value="">— pilih spoiler —</option>
+                @foreach ($spoilerProducts as $product)
+                    @foreach ($product->variants as $variant)
+                        <option value="{{ $variant->id }}" data-price="{{ $product->purchase_price }}">
+                            {{ $product->name }} — {{ $variant->name }} ({{ $variant->sku }})
+                        </option>
+                    @endforeach
+                @endforeach
+            </select>
+            @if ($spoilerProducts->isEmpty())
+                <p class="text-xs text-amber-600 mt-1">Belum ada produk dengan tipe <code>Spoiler</code>. Tambahkan dulu di halaman Produk.</p>
+            @endif
+        </div>
+
+        {{-- Klakson --}}
+        <div id="field-klakson" class="kelengkapan-field hidden">
+            <label class="label">Klakson</label>
+            <select name="variant_klakson" class="input variant-select">
+                <option value="">— pilih klakson —</option>
+                @foreach ($klaksonProducts as $product)
+                    @foreach ($product->variants as $variant)
+                        <option value="{{ $variant->id }}" data-price="{{ $product->purchase_price }}">
+                            {{ $product->name }} — {{ $variant->name }} ({{ $variant->sku }})
+                        </option>
+                    @endforeach
+                @endforeach
+            </select>
+            @if ($klaksonProducts->isEmpty())
+                <p class="text-xs text-amber-600 mt-1">Belum ada produk dengan tipe <code>Klakson</code>. Tambahkan dulu di halaman Produk.</p>
+            @endif
         </div>
     </div>
 
@@ -203,78 +280,78 @@
     <div class="mt-4">
         <label class="label">Harga Modal (Auto)</label>
         <input type="text" id="harga-modal-display" class="input bg-gray-100 font-mono" readonly
-               value="{{ old('harga_modal_display', '') }}" placeholder="Otomatis dihitung">
+               value="" placeholder="Otomatis dihitung">
         <input type="hidden" name="harga_modal" id="harga-modal-value"
                value="{{ old('harga_modal', $existingItems->first()?->harga_modal ?? 0) }}">
-        <p class="text-xs text-gray-500 mt-1">Harga modal otomatis dihitung berdasarkan pilihan variant × jumlah.</p>
+        <p class="text-xs text-gray-500 mt-1">
+            Harga modal otomatis = Σ(harga beli variant yang dipilih) × jumlah.
+        </p>
     </div>
 </div>
 
 {{-- JavaScript: dynamic kelengkapan fields & auto-calculate harga modal --}}
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    const kelengkapanSelect = document.getElementById('kelengkapan-select');
-    const fieldStir = document.getElementById('field-stir');
-    const fieldBoskit = document.getElementById('field-boskit');
-    const fieldSpion = document.getElementById('field-spion');
-    const hargaModalDisplay = document.getElementById('harga-modal-display');
-    const hargaModalValue = document.getElementById('harga-modal-value');
-    const itemQuantity = document.getElementById('item-quantity');
+(function () {
+    // Mapping kelengkapan code => array of field IDs yang harus tampil.
+    // Harus sinkron dengan $kelengkapanFieldMap di PHP & saveOrderItems() controller.
+    const KELENGKAPAN_MAP = @json($kelengkapanFieldMap);
 
-    function toggleFields() {
-        const val = kelengkapanSelect.value;
+    document.addEventListener('DOMContentLoaded', function () {
+        const kelengkapanSelect = document.getElementById('kelengkapan-select');
+        const allFields = document.querySelectorAll('.kelengkapan-field');
+        const hargaModalDisplay = document.getElementById('harga-modal-display');
+        const hargaModalValue = document.getElementById('harga-modal-value');
+        const itemQuantity = document.getElementById('item-quantity');
 
-        // Hide all first
-        fieldStir.classList.add('hidden');
-        fieldBoskit.classList.add('hidden');
-        fieldSpion.classList.add('hidden');
+        function toggleFields() {
+            const val = kelengkapanSelect.value;
+            const activeFields = KELENGKAPAN_MAP[val] || [];
 
-        if (val === '1') {
-            // Stir Saja
-            fieldStir.classList.remove('hidden');
-        } else if (val === '2') {
-            // Stir + Boskit
-            fieldStir.classList.remove('hidden');
-            fieldBoskit.classList.remove('hidden');
-        } else if (val === '3') {
-            // Stir + Boskit + Spion
-            fieldStir.classList.remove('hidden');
-            fieldBoskit.classList.remove('hidden');
-            fieldSpion.classList.remove('hidden');
+            // Hide all first
+            allFields.forEach(function (el) {
+                el.classList.add('hidden');
+            });
+
+            // Show only the ones in the map
+            activeFields.forEach(function (fieldKey) {
+                const el = document.getElementById('field-' + fieldKey);
+                if (el) {
+                    el.classList.remove('hidden');
+                }
+            });
+
+            calculateHargaModal();
         }
 
-        calculateHargaModal();
-    }
+        function calculateHargaModal() {
+            let total = 0;
+            const qty = parseInt(itemQuantity.value) || 1;
 
-    function calculateHargaModal() {
-        let total = 0;
-        const qty = parseInt(itemQuantity.value) || 1;
-
-        document.querySelectorAll('.variant-select').forEach(function (sel) {
-            const parent = sel.closest('[id^="field-"]');
-            if (parent && !parent.classList.contains('hidden')) {
-                const selected = sel.options[sel.selectedIndex];
-                if (selected && selected.dataset.price) {
-                    total += parseFloat(selected.dataset.price) || 0;
+            document.querySelectorAll('.variant-select').forEach(function (sel) {
+                const parent = sel.closest('.kelengkapan-field');
+                if (parent && !parent.classList.contains('hidden')) {
+                    const selected = sel.options[sel.selectedIndex];
+                    if (selected && selected.dataset.price) {
+                        total += parseFloat(selected.dataset.price) || 0;
+                    }
                 }
-            }
+            });
+
+            const totalModal = total * qty;
+            hargaModalValue.value = totalModal;
+            hargaModalDisplay.value = totalModal > 0
+                ? 'Rp ' + totalModal.toLocaleString('id-ID')
+                : '';
+        }
+
+        kelengkapanSelect.addEventListener('change', toggleFields);
+        itemQuantity.addEventListener('input', calculateHargaModal);
+        document.querySelectorAll('.variant-select').forEach(function (sel) {
+            sel.addEventListener('change', calculateHargaModal);
         });
 
-        const totalModal = total * qty;
-        hargaModalValue.value = totalModal;
-        hargaModalDisplay.value = totalModal > 0
-            ? 'Rp ' + totalModal.toLocaleString('id-ID')
-            : '';
-    }
-
-    kelengkapanSelect.addEventListener('change', toggleFields);
-    itemQuantity.addEventListener('input', calculateHargaModal);
-
-    document.querySelectorAll('.variant-select').forEach(function (sel) {
-        sel.addEventListener('change', calculateHargaModal);
+        // Initial state
+        toggleFields();
     });
-
-    // Initial state
-    toggleFields();
-});
+})();
 </script>
