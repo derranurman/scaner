@@ -171,18 +171,16 @@
                         <div class="flex-1 min-w-[280px]">
                             <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Item Setelah Resolusi</div>
 
-                            {{-- Seller Note ditampilkan di kolom resolusi supaya kelihatan saat cek hasil mapping --}}
-                            <?php if (!empty($entry['seller_note'])): ?>
-                                <div class="mb-2 text-xs bg-purple-50 border border-purple-200 rounded px-2 py-1.5">
-                                    <span class="font-semibold text-purple-700 uppercase tracking-wide mr-1">Seller Note</span>
-                                    <span class="font-mono font-semibold text-purple-900">{{ $entry['seller_note'] }}</span>
-                                </div>
-                            <?php endif; ?>
-
                             <?php if (empty($entry['items'])): ?>
                                 <div class="text-xs text-red-600">Tidak ada item terdeteksi.</div>
                             <?php else: ?>
                                 <ul class="text-sm divide-y">
+                                    <?php
+                                        // Seller Note di-append ke baris produk PERTAMA saja (bukan
+                                        // setiap item) supaya tidak terlihat duplikat & ringkas.
+                                        $sellerNote = $entry['seller_note'] ?? null;
+                                        $noteShown = false;
+                                    ?>
                                     <?php foreach ($entry['items'] as $item): ?>
                                         <?php
                                             $source = $item['source'] ?? 'unmatched';
@@ -193,14 +191,15 @@
                                                 'seller_note' => ['seller note', 'bg-purple-100 text-purple-700'],
                                                 default       => ['perlu mapping', 'bg-red-100 text-red-700'],
                                             };
+                                            $appendNote = (! $noteShown && ! empty($sellerNote));
+                                            if ($appendNote) {
+                                                $noteShown = true;
+                                            }
                                         ?>
                                         <li class="py-1 flex items-center gap-2 flex-wrap">
                                             <span class="badge bg-gray-100 text-gray-700">{{ $item['quantity'] }}&times;</span>
                                             <span class="flex-1">
-                                                <span class="font-medium">{{ $item['product_name'] }}</span>
-                                                <?php if (!empty($item['variant_name'])): ?>
-                                                    &mdash; {{ $item['variant_name'] }}
-                                                <?php endif; ?>
+                                                <span class="font-medium">{{ $item['product_name'] }}@if (!empty($item['variant_name'])) &mdash; {{ $item['variant_name'] }}@endif@if ($appendNote), <span class="text-purple-700 font-semibold">{{ $sellerNote }}</span>@endif</span>
                                                 <?php if (!empty($item['sku'])): ?>
                                                     <span class="text-xs text-gray-400 font-mono ml-1">{{ $item['sku'] }}</span>
                                                 <?php endif; ?>
