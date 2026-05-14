@@ -170,6 +170,15 @@
 
                         <div class="flex-1 min-w-[280px]">
                             <div class="text-xs font-semibold uppercase text-gray-500 mb-1">Item Setelah Resolusi</div>
+
+                            {{-- Seller Note ditampilkan di kolom resolusi supaya kelihatan saat cek hasil mapping --}}
+                            <?php if (!empty($entry['seller_note'])): ?>
+                                <div class="mb-2 text-xs bg-purple-50 border border-purple-200 rounded px-2 py-1.5">
+                                    <span class="font-semibold text-purple-700 uppercase tracking-wide mr-1">Seller Note</span>
+                                    <span class="font-mono font-semibold text-purple-900">{{ $entry['seller_note'] }}</span>
+                                </div>
+                            <?php endif; ?>
+
                             <?php if (empty($entry['items'])): ?>
                                 <div class="text-xs text-red-600">Tidak ada item terdeteksi.</div>
                             <?php else: ?>
