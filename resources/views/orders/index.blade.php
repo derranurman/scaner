@@ -12,6 +12,7 @@
             </p>
             <div class="flex gap-2">
                 <a href="{{ route('orders.create') }}" class="btn-primary">+ Tambah Pesanan</a>
+                <a href="{{ route('orders.info_rumus') }}" class="btn-secondary" title="Info rumus perhitungan">ⓘ Info Rumus</a>
                 <a href="{{ route('orders.export', request()->query()) }}" class="btn-secondary">⬇ Export Excel</a>
             </div>
         </div>
