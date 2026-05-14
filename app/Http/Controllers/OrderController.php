@@ -121,22 +121,43 @@ class OrderController extends Controller
             // BOM agar Excel mengenali UTF-8 dengan benar.
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
-            // Header (semua kolom yang ada di tabel pesanan).
+            // Header — persis sama dengan kolom di halaman /orders.
             fputcsv($handle, [
-                'No', 'Resi', 'Order ID', 'Tanggal Pesanan',
-                'Host Live', 'Platform', 'Pengirim', 'Pembeli', 'No HP',
-                'SKU', 'Kelengkapan', 'Quantity',
-                'Harga Jual', 'Total Jual', 'Total Modal', 'Total Reseller',
-                'Ongkir Cargo', 'Yield', 'Plastik/Dus', 'Operasional',
-                'ADM (%)', 'ADM (Rp)',
-                'Ongkir Free (%)', 'Ongkir Free (Rp)',
-                'Bulat Max 650Rb', 'Biaya Layanan', 'Biaya Logistik',
-                'Pajak (%)', 'Pajak (Rp)',
-                'Profit Kotor', '% Profit Kotor',
-                'Margin Bisnis', '% Margin Bisnis',
-                'Margin Live', '% Margin Live', 'Bersih Margin Live',
-                'Total Potongan Aplikasi',
-                'Status', 'Catatan',
+                'No',
+                'Resi',
+                'Order ID',
+                'Host Live',
+                'Platform',
+                'Pengirim',
+                'Pembeli',
+                'No. HP',
+                'SKU',
+                'Harga Jual',
+                'Total Jual',
+                'Total Modal',
+                'Total Reseller',
+                'Ongkir Cargo',
+                'Yield',
+                'Plastik/Dus',
+                'Operasional',
+                'ADM (%)',
+                'ADM (Rp)',
+                'Ongkir Free (%)',
+                'Ongkir Free (Rp)',
+                'Bulat Max 650Rb',
+                'Biaya Layanan (Rp)',
+                'Biaya Logistik (Rp)',
+                'Pajak (%)',
+                'Pajak (Rp)',
+                'Profit Kotor',
+                '% Profit Kotor',
+                'Margin Bisnis',
+                '% Margin Bisnis',
+                'Margin Live',
+                '% Margin Live',
+                'Bersih Margin Live',
+                'TOTAL POTONGAN APLIKASI',
+                'Status',
             ], ';');
 
             $no = 1;
@@ -144,23 +165,18 @@ class OrderController extends Controller
                 $m = $this->metrics->compute($order);
 
                 $skus = $order->items->pluck('sku')->filter()->unique()->implode(', ');
-                $kelengkapan = $order->items->pluck('kelengkapan')->filter()->unique()->implode(', ');
-                $qty = $order->items->sum('quantity');
                 $hargaJual = (float) ($order->items->first()?->variant?->product?->selling_price ?? 0);
 
                 fputcsv($handle, [
                     $no++,
                     $order->resi_number,
                     $order->tiktok_order_id,
-                    $order->order_date?->format('d/m/Y') ?? '-',
-                    $order->host_live ?? '-',
-                    $order->platformDeduction?->platform_name ?? '-',
-                    $order->sender_name ?? '-',
-                    $order->buyer_name ?? '-',
-                    $order->buyer_phone ?? '-',
-                    $skus ?: '-',
-                    $kelengkapan ?: '-',
-                    $qty,
+                    $order->host_live ?? '—',
+                    $order->platformDeduction?->platform_name ?? '—',
+                    $order->sender_name ?? '—',
+                    $order->buyer_name ?? '—',
+                    $order->buyer_phone ?? '—',
+                    $skus ?: '—',
                     $hargaJual,
                     $m['total_jual'],
                     $m['total_modal'],
@@ -187,7 +203,6 @@ class OrderController extends Controller
                     $m['bersih_margin_live'],
                     $m['total_potongan_aplikasi'],
                     ucfirst($order->status),
-                    $order->notes,
                 ], ';');
             }
 
