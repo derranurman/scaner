@@ -12,7 +12,7 @@
             </p>
             <div class="flex gap-2">
                 <a href="{{ route('orders.create') }}" class="btn-primary">+ Tambah Pesanan</a>
-                <a href="{{ route('orders.import.pdf.show') }}" class="btn-secondary">Import PDF</a>
+                <a href="{{ route('orders.export', request()->query()) }}" class="btn-secondary">⬇ Export Excel</a>
             </div>
         </div>
 
@@ -25,6 +25,7 @@
                 <option value="cancelled" <?php if ($status === 'cancelled') echo 'selected'; ?>>Cancelled</option>
                 <option value="return"    <?php if ($status === 'return') echo 'selected'; ?>>Return</option>
                 <option value="selesai"   <?php if ($status === 'selesai') echo 'selected'; ?>>Selesai</option>
+                <option value="selesai_bulan_kemarin" <?php if ($status === 'selesai_bulan_kemarin') echo 'selected'; ?>>Selesai Bulan Kemarin</option>
             </select>
             <input type="date" name="date" value="{{ $date }}" class="input">
             <div class="flex gap-2">

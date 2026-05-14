@@ -4,14 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Services\OrderMetricsService;
+use App\Services\StockService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ReturnController extends Controller
 {
-    public function __construct(private OrderMetricsService $metrics)
-    {
+    public function __construct(
+        private OrderMetricsService $metrics,
+        private StockService $stockService,
+    ) {
     }
 
     /**
@@ -77,5 +80,52 @@ class ReturnController extends Controller
         $order->update(['status' => Order::STATUS_PENDING]);
 
         return back()->with('success', "Pesanan {$order->resi_number} dikembalikan ke Pending.");
+    }
+
+    /**
+     * Tandai bahwa barang return SUDAH DITERIMA kembali oleh toko.
+     * Otomatis menambah stok untuk setiap item, lalu tandai pesanan
+     * sebagai 'cancelled' (sudah selesai diproses sebagai return).
+     */
+    public function receiveItems(Request $request, Order $order): RedirectResponse
+    {
+        if ($order->status !== Order::STATUS_RETURN) {
+            return back()->with('error', 'Pesanan ini tidak dalam status Return.');
+        }
+
+        $order->load('items.variant');
+
+        $totalRestocked = 0;
+        $skipped = [];
+
+        foreach ($order->items as $item) {
+            if (! $item->variant) {
+                $skipped[] = $item->sku ?? $item->product_name;
+                continue;
+            }
+
+            $this->stockService->adjust(
+                variant: $item->variant,
+                qty: (int) $item->quantity,
+                type: \App\Models\StockMovement::TYPE_IN,
+                userId: auth()->id(),
+                orderId: $order->id,
+                reference: "Return diterima — Resi {$order->resi_number}",
+            );
+
+            $totalRestocked += (int) $item->quantity;
+        }
+
+        $order->update([
+            'status' => Order::STATUS_CANCELLED,
+            'notes' => trim($order->notes . "\n[BARANG DITERIMA] " . now()->format('d/m/Y H:i') . " — {$totalRestocked} unit dikembalikan ke stok"),
+        ]);
+
+        $msg = "Barang return resi {$order->resi_number} diterima. {$totalRestocked} unit dikembalikan ke stok.";
+        if (! empty($skipped)) {
+            $msg .= ' (Item tanpa variant terkait dilewati: ' . implode(', ', $skipped) . ')';
+        }
+
+        return redirect()->route('returns.index')->with('success', $msg);
     }
 }

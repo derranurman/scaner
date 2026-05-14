@@ -11,6 +11,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderController extends Controller
 {
@@ -34,7 +35,14 @@ class OrderController extends Controller
                         ->orWhere('sender_name', 'like', "%{$q}%");
                 });
             })
-            ->when($status, fn ($qq) => $qq->where('status', $status))
+            ->when($status === 'selesai_bulan_kemarin', function ($qq) {
+                // Selesai bulan kemarin = status 'selesai' dan updated_at di bulan kemarin
+                $prev = now()->subMonthNoOverflow();
+                $qq->where('status', Order::STATUS_SELESAI)
+                    ->whereYear('updated_at', $prev->year)
+                    ->whereMonth('updated_at', $prev->month);
+            })
+            ->when($status && $status !== 'selesai_bulan_kemarin', fn ($qq) => $qq->where('status', $status))
             ->when($date, fn ($qq) => $qq->whereDate('order_date', $date))
             ->latest('id')
             ->paginate(20)
@@ -71,6 +79,122 @@ class OrderController extends Controller
         return view('orders.show', [
             'order' => $order,
             'metric' => $this->metrics->compute($order),
+        ]);
+    }
+
+    /**
+     * Export semua data tabel pesanan ke CSV (dibuka di Excel).
+     * Mengikuti filter yang sama dengan index().
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $q = trim((string) $request->query('q', ''));
+        $status = $request->query('status');
+        $date = $request->query('date');
+
+        $orders = Order::with(['items.variant.product', 'packedBy', 'platformDeduction'])
+            ->when($q !== '', function ($query) use ($q) {
+                $query->where(function ($sub) use ($q) {
+                    $sub->where('resi_number', 'like', "%{$q}%")
+                        ->orWhere('tiktok_order_id', 'like', "%{$q}%")
+                        ->orWhere('buyer_name', 'like', "%{$q}%")
+                        ->orWhere('host_live', 'like', "%{$q}%")
+                        ->orWhere('sender_name', 'like', "%{$q}%");
+                });
+            })
+            ->when($status === 'selesai_bulan_kemarin', function ($qq) {
+                $prev = now()->subMonthNoOverflow();
+                $qq->where('status', Order::STATUS_SELESAI)
+                    ->whereYear('updated_at', $prev->year)
+                    ->whereMonth('updated_at', $prev->month);
+            })
+            ->when($status && $status !== 'selesai_bulan_kemarin', fn ($qq) => $qq->where('status', $status))
+            ->when($date, fn ($qq) => $qq->whereDate('order_date', $date))
+            ->latest('id')
+            ->get();
+
+        $filename = 'pesanan-' . now()->format('Y-m-d-His') . '.csv';
+
+        return response()->streamDownload(function () use ($orders) {
+            $handle = fopen('php://output', 'w');
+
+            // BOM agar Excel mengenali UTF-8 dengan benar.
+            fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+            // Header (semua kolom yang ada di tabel pesanan).
+            fputcsv($handle, [
+                'No', 'Resi', 'Order ID', 'Tanggal Pesanan',
+                'Host Live', 'Platform', 'Pengirim', 'Pembeli', 'No HP',
+                'SKU', 'Kelengkapan', 'Quantity',
+                'Harga Jual', 'Total Jual', 'Total Modal', 'Total Reseller',
+                'Ongkir Cargo', 'Yield', 'Plastik/Dus', 'Operasional',
+                'ADM (%)', 'ADM (Rp)',
+                'Ongkir Free (%)', 'Ongkir Free (Rp)',
+                'Bulat Max 650Rb', 'Biaya Layanan', 'Biaya Logistik',
+                'Pajak (%)', 'Pajak (Rp)',
+                'Profit Kotor', '% Profit Kotor',
+                'Margin Bisnis', '% Margin Bisnis',
+                'Margin Live', '% Margin Live', 'Bersih Margin Live',
+                'Total Potongan Aplikasi',
+                'Status', 'Catatan',
+            ], ';');
+
+            $no = 1;
+            foreach ($orders as $order) {
+                $m = $this->metrics->compute($order);
+
+                $skus = $order->items->pluck('sku')->filter()->unique()->implode(', ');
+                $kelengkapan = $order->items->pluck('kelengkapan')->filter()->unique()->implode(', ');
+                $qty = $order->items->sum('quantity');
+                $hargaJual = (float) ($order->items->first()?->variant?->product?->selling_price ?? 0);
+
+                fputcsv($handle, [
+                    $no++,
+                    $order->resi_number,
+                    $order->tiktok_order_id,
+                    $order->order_date?->format('d/m/Y') ?? '-',
+                    $order->host_live ?? '-',
+                    $order->platformDeduction?->platform_name ?? '-',
+                    $order->sender_name ?? '-',
+                    $order->buyer_name ?? '-',
+                    $order->buyer_phone ?? '-',
+                    $skus ?: '-',
+                    $kelengkapan ?: '-',
+                    $qty,
+                    $hargaJual,
+                    $m['total_jual'],
+                    $m['total_modal'],
+                    $m['total_reseller'],
+                    $m['ongkir_cargo'],
+                    $m['yield_rp'],
+                    $m['plastik_dus'],
+                    $m['operasional_rp'],
+                    $m['adm_pct'],
+                    $m['adm_rp'],
+                    $m['ongkir_free_pct'],
+                    $m['ongkir_free_rp'],
+                    $m['bulat_max'],
+                    $m['biaya_layanan'],
+                    $m['biaya_logistik'],
+                    $m['pajak_pct'],
+                    $m['pajak_rp'],
+                    $m['profit_kotor'],
+                    $m['pct_profit_kotor'],
+                    $m['margin_bisnis'],
+                    $m['pct_margin_bisnis'],
+                    $m['margin_live'],
+                    $m['pct_margin_live'],
+                    $m['bersih_margin_live'],
+                    $m['total_potongan_aplikasi'],
+                    ucfirst($order->status),
+                    $order->notes,
+                ], ';');
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
 

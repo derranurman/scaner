@@ -61,6 +61,12 @@
                             <td class="px-2 py-2 text-right font-mono">Rp {{ number_format($m['total_modal'], 0, ',', '.') }}</td>
                             <td class="px-2 py-2 max-w-xs truncate" title="{{ $order->notes }}">{{ \Illuminate\Support\Str::limit($order->notes, 50) }}</td>
                             <td class="px-2 py-2 text-right">
+                                <form method="POST" action="{{ route('returns.receive', $order) }}" class="inline"
+                                      onsubmit="return confirm('Tandai barang resi {{ $order->resi_number }} sudah diterima?\n\nStok akan otomatis bertambah ({{ $order->items->sum('quantity') }} unit).');">
+                                    @csrf
+                                    <button type="submit" class="text-green-600 hover:underline text-xs font-semibold">✓ Barang Diterima</button>
+                                </form>
+                                <span class="text-gray-300">·</span>
                                 <form method="POST" action="{{ route('returns.undo', $order) }}" class="inline"
                                       onsubmit="return confirm('Kembalikan pesanan ini ke status Pending?');">
                                     @csrf

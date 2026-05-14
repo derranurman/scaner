@@ -7,14 +7,20 @@
 
     <div class="card">
         <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <form method="GET" class="flex gap-2">
-                <input name="q" value="{{ $q }}" placeholder="Cari produk / SKU / tipe…" class="input w-64">
-                <button class="btn-primary" type="submit">Cari</button>
-                @if ($q)
+            <form method="GET" class="flex gap-2 flex-wrap">
+                <input name="q" value="{{ $q }}" placeholder="Cari produk / SKU…" class="input w-56">
+                <select name="type" class="input w-48">
+                    <option value="">— Semua Tipe —</option>
+                    @foreach ($types as $t)
+                        <option value="{{ $t }}" {{ $type === $t ? 'selected' : '' }}>{{ $t }}</option>
+                    @endforeach
+                </select>
+                <button class="btn-primary" type="submit">Filter</button>
+                @if ($q || $type)
                     <a href="{{ route('reports.stock') }}" class="btn-secondary">Reset</a>
                 @endif
             </form>
-            <a href="{{ route('reports.stock.export') }}" class="btn-primary">
+            <a href="{{ route('reports.stock.export', ['type' => $type]) }}" class="btn-primary">
                 ⬇ Export Excel (CSV)
             </a>
         </div>

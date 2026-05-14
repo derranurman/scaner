@@ -12,6 +12,7 @@ class StockReportController extends Controller
     public function index(Request $request): View
     {
         $q = trim((string) $request->query('q', ''));
+        $type = trim((string) $request->query('type', ''));
 
         $products = Product::with('variants')
             ->where('is_active', true)
@@ -22,16 +23,28 @@ class StockReportController extends Controller
                         ->orWhere('type', 'like', "%{$q}%");
                 });
             })
+            ->when($type !== '', fn ($query) => $query->where('type', $type))
             ->orderBy('name')
             ->get();
 
-        return view('reports.stock', compact('products', 'q'));
+        // Daftar tipe untuk dropdown filter (semua tipe yang ada di DB).
+        $types = Product::where('is_active', true)
+            ->whereNotNull('type')
+            ->where('type', '!=', '')
+            ->distinct()
+            ->orderBy('type')
+            ->pluck('type');
+
+        return view('reports.stock', compact('products', 'q', 'type', 'types'));
     }
 
     public function export(Request $request): StreamedResponse
     {
+        $type = trim((string) $request->query('type', ''));
+
         $products = Product::with('variants')
             ->where('is_active', true)
+            ->when($type !== '', fn ($query) => $query->where('type', $type))
             ->orderBy('name')
             ->get();
 

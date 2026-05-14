@@ -64,6 +64,7 @@ Route::middleware('auth')->group(function () {
 
         // Orders
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
+        Route::get('orders/export', [OrderController::class, 'export'])->name('orders.export');
         Route::get('orders/create', [OrderController::class, 'create'])->name('orders.create');
         Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.show');
@@ -105,6 +106,7 @@ Route::middleware('auth')->group(function () {
         Route::get('returns', [ReturnController::class, 'index'])->name('returns.index');
         Route::post('returns/mark', [ReturnController::class, 'markReturn'])->name('returns.mark');
         Route::post('returns/{order}/undo', [ReturnController::class, 'undoReturn'])->name('returns.undo');
+        Route::post('returns/{order}/receive', [ReturnController::class, 'receiveItems'])->name('returns.receive');
 
         // Users
         Route::resource('users', UserController::class)->except(['show']);
