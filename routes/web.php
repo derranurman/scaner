@@ -73,6 +73,7 @@ Route::middleware('auth')->group(function () {
         Route::delete('orders/{order}', [OrderController::class, 'destroy'])->name('orders.destroy');
         Route::post('orders/{order}/meta', [OrderController::class, 'updateMeta'])->name('orders.update_meta');
         Route::post('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update_status');
+        Route::post('orders/{order}/potongan', [OrderController::class, 'updatePotongan'])->name('orders.update_potongan');
 
         // Import
         Route::get('orders-import', [OrderImportController::class, 'show'])->name('orders.import.show');

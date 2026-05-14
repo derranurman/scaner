@@ -227,6 +227,9 @@ class OrderController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $this->validateOrder($request);
+        if (($data['total_potongan_aplikasi_override'] ?? null) === '') {
+            $data['total_potongan_aplikasi_override'] = null;
+        }
 
         $order = Order::create($data);
 
@@ -253,6 +256,9 @@ class OrderController extends Controller
     public function update(Request $request, Order $order): RedirectResponse
     {
         $data = $this->validateOrder($request, $order);
+        if (! $request->filled('total_potongan_aplikasi_override')) {
+            $data['total_potongan_aplikasi_override'] = null;
+        }
 
         $order->update($data);
 
@@ -310,6 +316,28 @@ class OrderController extends Controller
     }
 
     /**
+     * Update inline Total Potongan Aplikasi (override manual).
+     * Kosongkan field untuk reset ke hitungan otomatis.
+     */
+    public function updatePotongan(Request $request, Order $order): RedirectResponse
+    {
+        $request->validate([
+            'total_potongan_aplikasi_override' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $raw = $request->input('total_potongan_aplikasi_override');
+        $value = ($raw === null || $raw === '') ? null : (float) $raw;
+
+        $order->update(['total_potongan_aplikasi_override' => $value]);
+
+        $msg = $value === null
+            ? "Total Potongan Aplikasi {$order->resi_number} di-reset ke hitungan otomatis."
+            : "Total Potongan Aplikasi {$order->resi_number} di-set ke Rp " . number_format($value, 0, ',', '.');
+
+        return back()->with('success', $msg);
+    }
+
+    /**
      * Shared validation untuk create & update order.
      *
      * @return array<string, mixed>
@@ -340,6 +368,7 @@ class OrderController extends Controller
             ])],
             'order_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],
+            'total_potongan_aplikasi_override' => ['nullable', 'numeric', 'min:0'],
         ]);
     }
 

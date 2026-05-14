@@ -166,6 +166,18 @@
         <textarea name="notes" rows="2" class="input">{{ old('notes', $o->notes ?? '') }}</textarea>
         @error('notes') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
     </div>
+
+    <div class="md:col-span-2">
+        <label class="label">Total Potongan Aplikasi (Manual Override)</label>
+        <input type="number" step="any" min="0" name="total_potongan_aplikasi_override"
+               value="{{ old('total_potongan_aplikasi_override', $o?->total_potongan_aplikasi_override !== null ? rtrim(rtrim(number_format((float) $o->total_potongan_aplikasi_override, 2, '.', ''), '0'), '.') : '') }}"
+               class="input font-mono" placeholder="Kosongkan untuk hitungan otomatis">
+        <p class="text-xs text-gray-500 mt-1">
+            Isi angka untuk override Total Potongan Aplikasi (contoh: <code>18900</code> untuk Rp 18.900).
+            Kosongkan field ini supaya pakai hitungan otomatis = ADM + Bulat Max + Biaya Layanan + Biaya Logistik.
+        </p>
+        @error('total_potongan_aplikasi_override') <p class="text-xs text-red-600 mt-1">{{ $message }}</p> @enderror
+    </div>
 </div>
 
 {{-- ========== SECTION: PILIHAN BARANG (KELENGKAPAN) ========== --}}

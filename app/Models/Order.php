@@ -32,6 +32,7 @@ class Order extends Model
         'packed_at',
         'packed_by_user_id',
         'notes',
+        'total_potongan_aplikasi_override',
     ];
 
     protected function casts(): array
@@ -39,6 +40,7 @@ class Order extends Model
         return [
             'order_date' => 'datetime',
             'packed_at' => 'datetime',
+            'total_potongan_aplikasi_override' => 'decimal:2',
         ];
     }
 

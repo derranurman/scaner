@@ -54,12 +54,12 @@
                         <th class="px-2 py-2 text-right">Yield</th>
                         <th class="px-2 py-2 text-right">Plastik/Dus</th>
                         <th class="px-2 py-2 text-right">Operasional</th>
-                        <th class="px-2 py-2 text-right">ADM (%)</th>
-                        <th class="px-2 py-2 text-right">Ongkir Free (%)</th>
+                        <th class="px-2 py-2 text-right">ADM</th>
+                        <th class="px-2 py-2 text-right">Ongkir Free</th>
                         <th class="px-2 py-2 text-right">Bulat Max 650Rb</th>
                         <th class="px-2 py-2 text-right">Biaya Layanan (Rp)</th>
                         <th class="px-2 py-2 text-right">Biaya Logistik (Rp)</th>
-                        <th class="px-2 py-2 text-right">Pajak (%)</th>
+                        <th class="px-2 py-2 text-right">Pajak</th>
                         <th class="px-2 py-2 text-right">Profit Kotor</th>
                         <th class="px-2 py-2 text-right">% Profit Kotor</th>
                         <th class="px-2 py-2 text-right">Margin Bisnis</th>
@@ -155,21 +155,12 @@
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['yield_rp']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['plastik_dus']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['operasional_rp']) }}</td>
-                                <td class="px-2 py-2 text-right">
-                                    <div>{{ $pct($m['adm_pct']) }}</div>
-                                    <div class="text-gray-400 text-[10px] font-mono">{{ $fmt($m['adm_rp']) }}</div>
-                                </td>
-                                <td class="px-2 py-2 text-right">
-                                    <div>{{ $pct($m['ongkir_free_pct']) }}</div>
-                                    <div class="text-gray-400 text-[10px] font-mono">{{ $fmt($m['ongkir_free_rp']) }}</div>
-                                </td>
+                                <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['adm_rp']) }}</td>
+                                <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['ongkir_free_rp']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['bulat_max']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['biaya_layanan']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['biaya_logistik']) }}</td>
-                                <td class="px-2 py-2 text-right">
-                                    <div>{{ $pct($m['pajak_pct']) }}</div>
-                                    <div class="text-gray-400 text-[10px] font-mono">{{ $fmt($m['pajak_rp']) }}</div>
-                                </td>
+                                <td class="px-2 py-2 text-right font-mono">{{ $fmt($m['pajak_rp']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono font-semibold {{ $profitClass }}">{{ $fmt($m['profit_kotor']) }}</td>
                                 <td class="px-2 py-2 text-right {{ $profitClass }}">{{ $pct($m['pct_profit_kotor']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono font-semibold {{ $marginBisnisClass }}">{{ $fmt($m['margin_bisnis']) }}</td>
@@ -177,7 +168,21 @@
                                 <td class="px-2 py-2 text-right font-mono font-semibold {{ $marginLiveClass }}">{{ $fmt($m['margin_live']) }}</td>
                                 <td class="px-2 py-2 text-right {{ $marginLiveClass }}">{{ $pct($m['pct_margin_live']) }}</td>
                                 <td class="px-2 py-2 text-right font-mono {{ $marginLiveClass }}">{{ $fmt($m['bersih_margin_live']) }}</td>
-                                <td class="px-2 py-2 text-right font-mono font-semibold text-red-600">{{ $fmt($m['total_potongan_aplikasi']) }}</td>
+                                <td class="px-2 py-2 text-right">
+                                    <form method="POST" action="{{ route('orders.update_potongan', $order) }}" class="inline-flex items-center gap-1 justify-end">
+                                        @csrf
+                                        <input type="number" step="any" min="0"
+                                               name="total_potongan_aplikasi_override"
+                                               value="{{ $order->total_potongan_aplikasi_override !== null ? rtrim(rtrim(number_format((float) $order->total_potongan_aplikasi_override, 2, '.', ''), '0'), '.') : '' }}"
+                                               placeholder="{{ rtrim(rtrim(number_format((float) $m['total_potongan_aplikasi'], 2, '.', ''), '0'), '.') }}"
+                                               title="Kosongkan untuk pakai hitungan otomatis ({{ $fmt($m['total_potongan_aplikasi']) }})"
+                                               class="input text-xs py-1 w-28 text-right font-mono font-semibold {{ $order->total_potongan_aplikasi_override !== null ? 'text-red-600 bg-red-50' : 'text-red-600' }}">
+                                        <button type="submit" class="text-indigo-600 hover:underline text-xs">OK</button>
+                                    </form>
+                                    @if ($order->total_potongan_aplikasi_override !== null)
+                                        <div class="text-[10px] text-amber-600 mt-1">manual override</div>
+                                    @endif
+                                </td>
 
                                 <td class="px-2 py-2">
                                     <form method="POST" action="{{ route('orders.update_status', $order) }}" class="inline">

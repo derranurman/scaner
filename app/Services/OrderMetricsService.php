@@ -127,7 +127,11 @@ class OrderMetricsService
         }
 
         // Total Potongan Aplikasi = ADM + Bulat Max 650Rb + Biaya Layanan + Biaya Logistik
-        $totalPotonganAplikasi = $admRp + $bulatMax + $biayaLayanan + $biayaLogistik;
+        // Jika user mengisi override manual di order, pakai nilai itu.
+        $totalPotonganAplikasiAuto = $admRp + $bulatMax + $biayaLayanan + $biayaLogistik;
+        $totalPotonganAplikasi = $order->total_potongan_aplikasi_override !== null
+            ? (float) $order->total_potongan_aplikasi_override
+            : $totalPotonganAplikasiAuto;
 
         // Margin Live = Total Jual - Total Reseller
         $marginLive = $totalJual - $totalReseller;
@@ -184,6 +188,8 @@ class OrderMetricsService
             'pct_margin_live' => $pctMarginLive,
             'bersih_margin_live' => $bersihMarginLive,
             'total_potongan_aplikasi' => $totalPotonganAplikasi,
+            'total_potongan_aplikasi_auto' => $totalPotonganAplikasiAuto,
+            'total_potongan_aplikasi_overridden' => $order->total_potongan_aplikasi_override !== null,
         ];
     }
 }
