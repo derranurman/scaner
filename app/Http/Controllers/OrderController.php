@@ -145,6 +145,8 @@ class OrderController extends Controller
                 Order::STATUS_PENDING,
                 Order::STATUS_PACKED,
                 Order::STATUS_CANCELLED,
+                Order::STATUS_RETURN,
+                Order::STATUS_SELESAI,
             ])],
         ]);
 
@@ -194,6 +196,8 @@ class OrderController extends Controller
                 Order::STATUS_PENDING,
                 Order::STATUS_PACKED,
                 Order::STATUS_CANCELLED,
+                Order::STATUS_RETURN,
+                Order::STATUS_SELESAI,
             ])],
             'order_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],

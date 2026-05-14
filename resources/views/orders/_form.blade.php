@@ -8,6 +8,8 @@
         \App\Models\Order::STATUS_PENDING => 'Pending',
         \App\Models\Order::STATUS_PACKED => 'Packed',
         \App\Models\Order::STATUS_CANCELLED => 'Cancelled',
+        \App\Models\Order::STATUS_RETURN => 'Return',
+        \App\Models\Order::STATUS_SELESAI => 'Selesai',
     ];
 
     // Kelengkapan options: value => label

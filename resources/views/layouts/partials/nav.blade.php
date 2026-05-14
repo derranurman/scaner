@@ -14,7 +14,7 @@
                         <div x-data="{ open: false }" class="relative">
                             <button @click="open = !open" @click.outside="open = false"
                                     class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-700 hover:bg-gray-50 inline-flex items-center gap-1
-                                           {{ request()->routeIs('products.*') || request()->routeIs('stock_in.*') || request()->routeIs('platform_deductions.*') || request()->routeIs('reports.products') ? 'bg-indigo-50 text-indigo-700' : '' }}">
+                                           {{ request()->routeIs('products.*') || request()->routeIs('stock_in.*') || request()->routeIs('platform_deductions.*') || request()->routeIs('reports.products') || request()->routeIs('reports.stock*') ? 'bg-indigo-50 text-indigo-700' : '' }}">
                                 Produk
                                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -25,9 +25,26 @@
                                 <a href="{{ route('stock_in.create') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Input Barang Masuk</a>
                                 <a href="{{ route('platform_deductions.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Kelola Potongan</a>
                                 <a href="{{ route('reports.products') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t">Laporan Produk</a>
+                                <a href="{{ route('reports.stock') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Laporan Stok</a>
                             </div>
                         </div>
-                        <x-nav-link :href="route('orders.index')" :active="request()->routeIs('orders.*') && !request()->routeIs('orders.import*')">Pesanan</x-nav-link>
+                        <div x-data="{ open: false }" class="relative">
+                            <button @click="open = !open" @click.outside="open = false"
+                                    class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-700 hover:bg-gray-50 inline-flex items-center gap-1
+                                           {{ request()->routeIs('orders.*') || request()->routeIs('reports.orders') || request()->routeIs('returns.*') || request()->routeIs('reports.returns') ? 'bg-indigo-50 text-indigo-700' : '' }}">
+                                Pesanan
+                                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </button>
+                            <div x-show="open" x-transition class="absolute mt-1 w-56 rounded-md bg-white shadow-lg border border-gray-200 z-20">
+                                <a href="{{ route('orders.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Daftar Pesanan</a>
+                                <a href="{{ route('orders.create') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Tambah Pesanan</a>
+                                <a href="{{ route('reports.orders') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t">Laporan Pesanan</a>
+                                <a href="{{ route('returns.index') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 border-t">Kelola Return</a>
+                                <a href="{{ route('reports.returns') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Laporan Return</a>
+                            </div>
+                        </div>
                         <div x-data="{ open: false }" class="relative">
                             <button @click="open = !open" @click.outside="open = false"
                                     class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-700 hover:bg-gray-50 inline-flex items-center gap-1
@@ -85,8 +102,14 @@
                 <x-responsive-nav-link :href="route('stock_in.create')">Input Barang Masuk</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('platform_deductions.index')">Kelola Potongan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('reports.products')">Laporan Produk</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('reports.stock')">Laporan Stok</x-responsive-nav-link>
                 <div class="px-3 pt-2 pb-1 text-xs uppercase text-gray-400">Pesanan</div>
-                <x-responsive-nav-link :href="route('orders.index')">Pesanan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('orders.index')">Daftar Pesanan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('orders.create')">Tambah Pesanan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('reports.orders')">Laporan Pesanan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('returns.index')">Kelola Return</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('reports.returns')">Laporan Return</x-responsive-nav-link>
+                <div class="px-3 pt-2 pb-1 text-xs uppercase text-gray-400">Import</div>
                 <x-responsive-nav-link :href="route('orders.import.pdf.show')">Import PDF</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('orders.import.show')">Import CSV</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('combo_mappings.index')">Combo Mapping</x-responsive-nav-link>

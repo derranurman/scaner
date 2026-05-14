@@ -5,13 +5,17 @@ use App\Http\Controllers\ComboMappingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderImportController;
+use App\Http\Controllers\OrderReportController;
 use App\Http\Controllers\PackingReportController;
 use App\Http\Controllers\PdfImportController;
 use App\Http\Controllers\PlatformDeductionController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductReportController;
+use App\Http\Controllers\ReturnController;
+use App\Http\Controllers\ReturnReportController;
 use App\Http\Controllers\ScanController;
 use App\Http\Controllers\StockInController;
+use App\Http\Controllers\StockReportController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\VariantController;
 use Illuminate\Support\Facades\Route;
@@ -92,6 +96,15 @@ Route::middleware('auth')->group(function () {
         Route::get('reports/packing', [PackingReportController::class, 'index'])->name('reports.packing');
         Route::get('reports/packing/export', [PackingReportController::class, 'export'])->name('reports.packing.export');
         Route::get('reports/products', [ProductReportController::class, 'index'])->name('reports.products');
+        Route::get('reports/stock', [StockReportController::class, 'index'])->name('reports.stock');
+        Route::get('reports/stock/export', [StockReportController::class, 'export'])->name('reports.stock.export');
+        Route::get('reports/orders', [OrderReportController::class, 'index'])->name('reports.orders');
+        Route::get('reports/returns', [ReturnReportController::class, 'index'])->name('reports.returns');
+
+        // Return Management
+        Route::get('returns', [ReturnController::class, 'index'])->name('returns.index');
+        Route::post('returns/mark', [ReturnController::class, 'markReturn'])->name('returns.mark');
+        Route::post('returns/{order}/undo', [ReturnController::class, 'undoReturn'])->name('returns.undo');
 
         // Users
         Route::resource('users', UserController::class)->except(['show']);

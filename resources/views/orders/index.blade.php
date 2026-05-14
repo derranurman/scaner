@@ -23,6 +23,8 @@
                 <option value="pending"   <?php if ($status === 'pending') echo 'selected'; ?>>Pending</option>
                 <option value="packed"    <?php if ($status === 'packed') echo 'selected'; ?>>Packed</option>
                 <option value="cancelled" <?php if ($status === 'cancelled') echo 'selected'; ?>>Cancelled</option>
+                <option value="return"    <?php if ($status === 'return') echo 'selected'; ?>>Return</option>
+                <option value="selesai"   <?php if ($status === 'selesai') echo 'selected'; ?>>Selesai</option>
             </select>
             <input type="date" name="date" value="{{ $date }}" class="input">
             <div class="flex gap-2">
@@ -183,10 +185,14 @@
                                                 class="text-xs rounded border px-2 py-1 font-semibold
                                                     {{ $order->status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300' : '' }}
                                                     {{ $order->status === 'packed' ? 'bg-green-100 text-green-700 border-green-300' : '' }}
-                                                    {{ $order->status === 'cancelled' ? 'bg-gray-100 text-gray-600 border-gray-300' : '' }}">
+                                                    {{ $order->status === 'cancelled' ? 'bg-gray-100 text-gray-600 border-gray-300' : '' }}
+                                                    {{ $order->status === 'return' ? 'bg-red-100 text-red-700 border-red-300' : '' }}
+                                                    {{ $order->status === 'selesai' ? 'bg-blue-100 text-blue-700 border-blue-300' : '' }}">
                                             <option value="pending" {{ $order->status === 'pending' ? 'selected' : '' }}>Pending</option>
                                             <option value="packed" {{ $order->status === 'packed' ? 'selected' : '' }}>Packed</option>
                                             <option value="cancelled" {{ $order->status === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
+                                            <option value="return" {{ $order->status === 'return' ? 'selected' : '' }}>Return</option>
+                                            <option value="selesai" {{ $order->status === 'selesai' ? 'selected' : '' }}>Selesai</option>
                                         </select>
                                     </form>
                                 </td>

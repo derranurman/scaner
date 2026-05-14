@@ -14,6 +14,8 @@ class Order extends Model
     public const STATUS_PENDING = 'pending';
     public const STATUS_PACKED = 'packed';
     public const STATUS_CANCELLED = 'cancelled';
+    public const STATUS_RETURN = 'return';
+    public const STATUS_SELESAI = 'selesai';
 
     protected $fillable = [
         'tiktok_order_id',
