@@ -13,12 +13,16 @@
                     <div class="text-xs text-gray-500 mt-1">{{ $order->courier }} · Order ID: {{ $order->tiktok_order_id ?? '—' }}</div>
                 </div>
                 <div>
-                    @if ($order->status === 'pending')
+                    @if ($order->status === \App\Models\Order::STATUS_PENDING)
                         <span class="badge bg-amber-100 text-amber-700">Pending</span>
-                    @elseif ($order->status === 'packed')
+                    @elseif ($order->status === \App\Models\Order::STATUS_PACKED)
                         <span class="badge bg-green-100 text-green-700">Packed</span>
+                    @elseif ($order->status === \App\Models\Order::STATUS_SELESAI_BULAN_KEMARIN)
+                        <span class="badge bg-blue-100 text-blue-700">Selesai Bulan Kemarin</span>
+                    @elseif ($order->status === \App\Models\Order::STATUS_RETURN)
+                        <span class="badge bg-red-100 text-red-700">Return</span>
                     @else
-                        <span class="badge bg-gray-100 text-gray-600">Cancelled</span>
+                        <span class="badge bg-gray-100 text-gray-600">{{ ucfirst($order->status) }}</span>
                     @endif
                 </div>
             </div>

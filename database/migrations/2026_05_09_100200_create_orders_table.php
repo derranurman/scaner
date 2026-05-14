@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('buyer_name')->nullable();
             $table->string('buyer_phone')->nullable();
             $table->text('shipping_address')->nullable();
-            $table->string('status')->default('pending'); // pending | packed | cancelled
+            $table->string('status')->default('pending'); // pending | packed | selesai_bulan_kemarin | return
             $table->timestamp('order_date')->nullable();
             $table->timestamp('packed_at')->nullable();
             $table->foreignId('packed_by_user_id')->nullable()->constrained('users')->nullOnDelete();

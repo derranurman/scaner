@@ -41,11 +41,10 @@ class OrderReportController extends Controller
         }
 
         $statusCounts = [
-            'pending' => $orders->where('status', 'pending')->count(),
-            'packed' => $orders->where('status', 'packed')->count(),
-            'selesai' => $orders->where('status', 'selesai')->count(),
-            'return' => $orders->where('status', 'return')->count(),
-            'cancelled' => $orders->where('status', 'cancelled')->count(),
+            'pending' => $orders->where('status', Order::STATUS_PENDING)->count(),
+            'packed' => $orders->where('status', Order::STATUS_PACKED)->count(),
+            'selesai_bulan_kemarin' => $orders->where('status', Order::STATUS_SELESAI_BULAN_KEMARIN)->count(),
+            'return' => $orders->where('status', Order::STATUS_RETURN)->count(),
         ];
 
         return view('reports.orders', compact(

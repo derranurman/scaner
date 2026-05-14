@@ -219,22 +219,18 @@
                     <span class="text-gray-600">Sudah dipacking, siap kirim.</span>
                 </div>
                 <div class="flex items-center gap-2">
-                    <span class="badge bg-blue-100 text-blue-700">Selesai</span>
-                    <span class="text-gray-600">Pesanan selesai dikirim & diterima.</span>
+                    <span class="badge bg-blue-100 text-blue-700">Selesai Bulan Kemarin</span>
+                    <span class="text-gray-600">Pesanan selesai bulan sebelumnya.</span>
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="badge bg-red-100 text-red-700">Return</span>
                     <span class="text-gray-600">Pesanan dikembalikan pembeli.</span>
                 </div>
-                <div class="flex items-center gap-2">
-                    <span class="badge bg-gray-100 text-gray-600">Cancelled</span>
-                    <span class="text-gray-600">Dibatalkan / return sudah diterima kembali.</span>
-                </div>
             </div>
 
             <p class="text-xs text-gray-500 mt-3">
-                Filter <strong>"Selesai Bulan Kemarin"</strong> menampilkan pesanan dengan status
-                <code>selesai</code> dan tanggal update di bulan kalender sebelumnya.
+                Hanya 4 status pesanan yang valid: <strong>Pending</strong>, <strong>Packed</strong>,
+                <strong>Selesai Bulan Kemarin</strong>, <strong>Return</strong>.
             </p>
         </div>
 

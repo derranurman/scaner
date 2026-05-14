@@ -13,9 +13,8 @@
                 <option value="">Semua status</option>
                 <option value="pending" {{ $status === 'pending' ? 'selected' : '' }}>Pending</option>
                 <option value="packed" {{ $status === 'packed' ? 'selected' : '' }}>Packed</option>
-                <option value="selesai" {{ $status === 'selesai' ? 'selected' : '' }}>Selesai</option>
+                <option value="selesai_bulan_kemarin" {{ $status === 'selesai_bulan_kemarin' ? 'selected' : '' }}>Selesai Bulan Kemarin</option>
                 <option value="return" {{ $status === 'return' ? 'selected' : '' }}>Return</option>
-                <option value="cancelled" {{ $status === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
             </select>
             <button class="btn-primary" type="submit">Filter</button>
             <a href="{{ route('reports.orders') }}" class="btn-secondary text-center">Reset</a>
@@ -49,9 +48,8 @@
         <div class="flex gap-3 text-xs mb-4 flex-wrap">
             <span class="badge bg-amber-100 text-amber-700">Pending: {{ $statusCounts['pending'] }}</span>
             <span class="badge bg-green-100 text-green-700">Packed: {{ $statusCounts['packed'] }}</span>
-            <span class="badge bg-blue-100 text-blue-700">Selesai: {{ $statusCounts['selesai'] }}</span>
+            <span class="badge bg-blue-100 text-blue-700">Selesai Bulan Kemarin: {{ $statusCounts['selesai_bulan_kemarin'] }}</span>
             <span class="badge bg-red-100 text-red-700">Return: {{ $statusCounts['return'] }}</span>
-            <span class="badge bg-gray-100 text-gray-600">Cancelled: {{ $statusCounts['cancelled'] }}</span>
         </div>
 
         {{-- Table --}}
@@ -88,10 +86,9 @@
                                 <span class="badge
                                     {{ $order->status === 'pending' ? 'bg-amber-100 text-amber-700' : '' }}
                                     {{ $order->status === 'packed' ? 'bg-green-100 text-green-700' : '' }}
-                                    {{ $order->status === 'selesai' ? 'bg-blue-100 text-blue-700' : '' }}
-                                    {{ $order->status === 'return' ? 'bg-red-100 text-red-700' : '' }}
-                                    {{ $order->status === 'cancelled' ? 'bg-gray-100 text-gray-600' : '' }}">
-                                    {{ ucfirst($order->status) }}
+                                    {{ $order->status === 'selesai_bulan_kemarin' ? 'bg-blue-100 text-blue-700' : '' }}
+                                    {{ $order->status === 'return' ? 'bg-red-100 text-red-700' : '' }}">
+                                    {{ \App\Models\Order::STATUS_LABELS[$order->status] ?? ucfirst($order->status) }}
                                 </span>
                             </td>
                         </tr>

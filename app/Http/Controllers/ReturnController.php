@@ -117,7 +117,7 @@ class ReturnController extends Controller
         }
 
         $order->update([
-            'status' => Order::STATUS_CANCELLED,
+            'status' => Order::STATUS_SELESAI_BULAN_KEMARIN,
             'notes' => trim($order->notes . "\n[BARANG DITERIMA] " . now()->format('d/m/Y H:i') . " — {$totalRestocked} unit dikembalikan ke stok"),
         ]);
 

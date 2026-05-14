@@ -59,11 +59,11 @@ class ScanController extends Controller
             ], 409);
         }
 
-        if ($order->status === Order::STATUS_CANCELLED) {
+        if ($order->status === Order::STATUS_RETURN) {
             return response()->json([
                 'ok' => false,
-                'code' => 'cancelled',
-                'message' => "Pesanan ini sudah dibatalkan.",
+                'code' => 'return',
+                'message' => "Pesanan ini berstatus Return dan tidak bisa di-packing.",
             ], 409);
         }
 
@@ -111,8 +111,8 @@ class ScanController extends Controller
                 if ($order->status === Order::STATUS_PACKED) {
                     return ['ok' => false, 'status' => 409, 'code' => 'already_packed', 'message' => 'Resi sudah dipacking.'];
                 }
-                if ($order->status === Order::STATUS_CANCELLED) {
-                    return ['ok' => false, 'status' => 409, 'code' => 'cancelled', 'message' => 'Pesanan dibatalkan.'];
+                if ($order->status === Order::STATUS_RETURN) {
+                    return ['ok' => false, 'status' => 409, 'code' => 'return', 'message' => 'Pesanan berstatus Return.'];
                 }
 
                 // Validasi stok

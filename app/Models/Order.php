@@ -13,9 +13,24 @@ class Order extends Model
 
     public const STATUS_PENDING = 'pending';
     public const STATUS_PACKED = 'packed';
-    public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_RETURN = 'return';
-    public const STATUS_SELESAI = 'selesai';
+    public const STATUS_SELESAI_BULAN_KEMARIN = 'selesai_bulan_kemarin';
+
+    /** Daftar 4 status yang valid. */
+    public const STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_PACKED,
+        self::STATUS_SELESAI_BULAN_KEMARIN,
+        self::STATUS_RETURN,
+    ];
+
+    /** Label yang ditampilkan di UI. */
+    public const STATUS_LABELS = [
+        self::STATUS_PENDING => 'Pending',
+        self::STATUS_PACKED => 'Packed',
+        self::STATUS_SELESAI_BULAN_KEMARIN => 'Selesai Bulan Kemarin',
+        self::STATUS_RETURN => 'Return',
+    ];
 
     protected $fillable = [
         'tiktok_order_id',

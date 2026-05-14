@@ -135,7 +135,7 @@ users          : id, name, email, role(admin|packing), is_active
 products       : id, name, sku, is_active
 variants       : id, product_id, name, sku, stock, min_stock
 orders         : id, tiktok_order_id, resi_number (unik), buyer_*,
-                 status(pending|packed|cancelled), packed_at, packed_by_user_id
+                 status(pending|packed|selesai_bulan_kemarin|return), packed_at, packed_by_user_id
 order_items    : id, order_id, variant_id (nullable), product_name,
                  variant_name, sku, quantity      ← snapshot nama saat import
 packing_logs   : id, user_id, order_id, resi_number, total_items,

@@ -35,14 +35,7 @@ class OrderController extends Controller
                         ->orWhere('sender_name', 'like', "%{$q}%");
                 });
             })
-            ->when($status === 'selesai_bulan_kemarin', function ($qq) {
-                // Selesai bulan kemarin = status 'selesai' dan updated_at di bulan kemarin
-                $prev = now()->subMonthNoOverflow();
-                $qq->where('status', Order::STATUS_SELESAI)
-                    ->whereYear('updated_at', $prev->year)
-                    ->whereMonth('updated_at', $prev->month);
-            })
-            ->when($status && $status !== 'selesai_bulan_kemarin', fn ($qq) => $qq->where('status', $status))
+            ->when($status, fn ($qq) => $qq->where('status', $status))
             ->when($date, fn ($qq) => $qq->whereDate('order_date', $date))
             ->latest('id')
             ->paginate(20)
@@ -102,13 +95,7 @@ class OrderController extends Controller
                         ->orWhere('sender_name', 'like', "%{$q}%");
                 });
             })
-            ->when($status === 'selesai_bulan_kemarin', function ($qq) {
-                $prev = now()->subMonthNoOverflow();
-                $qq->where('status', Order::STATUS_SELESAI)
-                    ->whereYear('updated_at', $prev->year)
-                    ->whereMonth('updated_at', $prev->month);
-            })
-            ->when($status && $status !== 'selesai_bulan_kemarin', fn ($qq) => $qq->where('status', $status))
+            ->when($status, fn ($qq) => $qq->where('status', $status))
             ->when($date, fn ($qq) => $qq->whereDate('order_date', $date))
             ->latest('id')
             ->get();
@@ -286,13 +273,7 @@ class OrderController extends Controller
     public function updateStatus(Request $request, Order $order): RedirectResponse
     {
         $data = $request->validate([
-            'status' => ['required', Rule::in([
-                Order::STATUS_PENDING,
-                Order::STATUS_PACKED,
-                Order::STATUS_CANCELLED,
-                Order::STATUS_RETURN,
-                Order::STATUS_SELESAI,
-            ])],
+            'status' => ['required', Rule::in(Order::STATUSES)],
         ]);
 
         $order->update(['status' => $data['status']]);
@@ -359,13 +340,7 @@ class OrderController extends Controller
             'host_live' => ['nullable', 'string', 'max:100'],
             'platform_deduction_id' => ['nullable', 'integer', 'exists:platform_deductions,id'],
             'shipping_address' => ['nullable', 'string'],
-            'status' => ['nullable', Rule::in([
-                Order::STATUS_PENDING,
-                Order::STATUS_PACKED,
-                Order::STATUS_CANCELLED,
-                Order::STATUS_RETURN,
-                Order::STATUS_SELESAI,
-            ])],
+            'status' => ['nullable', Rule::in(Order::STATUSES)],
             'order_date' => ['nullable', 'date'],
             'notes' => ['nullable', 'string'],
             'total_potongan_aplikasi_override' => ['nullable', 'numeric', 'min:0'],
