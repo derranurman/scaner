@@ -103,6 +103,8 @@ Route::middleware('auth')->group(function () {
         Route::get('reports/stock/export', [StockReportController::class, 'export'])->name('reports.stock.export');
         Route::get('reports/orders', [OrderReportController::class, 'index'])->name('reports.orders');
         Route::get('reports/returns', [ReturnReportController::class, 'index'])->name('reports.returns');
+        Route::get('reports/returns/export', [ReturnReportController::class, 'export'])->name('reports.returns.export');
+        Route::delete('reports/returns/{order}', [ReturnReportController::class, 'destroy'])->name('reports.returns.destroy');
 
         // Return Management
         Route::get('returns', [ReturnController::class, 'index'])->name('returns.index');

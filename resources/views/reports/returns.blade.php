@@ -6,22 +6,27 @@
     <?php $subheader = 'Rekap pesanan return berdasarkan periode. Bulan ini vs bulan kemarin.'; ?>
 
     <div class="card">
-        <form method="GET" class="flex gap-2 mb-4 flex-wrap">
-            <select name="month" class="input w-40">
-                @for ($m = 1; $m <= 12; $m++)
-                    <option value="{{ $m }}" {{ $month == $m ? 'selected' : '' }}>
-                        {{ \Carbon\Carbon::create()->month($m)->translatedFormat('F') }}
-                    </option>
-                @endfor
-            </select>
-            <select name="year" class="input w-28">
-                @for ($y = now()->year; $y >= now()->year - 2; $y--)
-                    <option value="{{ $y }}" {{ $year == $y ? 'selected' : '' }}>{{ $y }}</option>
-                @endfor
-            </select>
-            <button class="btn-primary" type="submit">Filter</button>
-            <a href="{{ route('reports.returns') }}" class="btn-secondary">Bulan Ini</a>
-        </form>
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <form method="GET" class="flex gap-2 flex-wrap">
+                <select name="month" class="input w-40">
+                    @for ($m = 1; $m <= 12; $m++)
+                        <option value="{{ $m }}" {{ $month == $m ? 'selected' : '' }}>
+                            {{ \Carbon\Carbon::create()->month($m)->translatedFormat('F') }}
+                        </option>
+                    @endfor
+                </select>
+                <select name="year" class="input w-28">
+                    @for ($y = now()->year; $y >= now()->year - 2; $y--)
+                        <option value="{{ $y }}" {{ $year == $y ? 'selected' : '' }}>{{ $y }}</option>
+                    @endfor
+                </select>
+                <button class="btn-primary" type="submit">Filter</button>
+                <a href="{{ route('reports.returns') }}" class="btn-secondary">Bulan Ini</a>
+            </form>
+            <a href="{{ route('reports.returns.export', ['month' => $month, 'year' => $year]) }}" class="btn-primary">
+                ⬇ Export Excel (CSV)
+            </a>
+        </div>
 
         {{-- Summary --}}
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -50,12 +55,14 @@
                     <tr>
                         <th class="px-2 py-2">No</th>
                         <th class="px-2 py-2">Resi</th>
-                        <th class="px-2 py-2">Tanggal</th>
+                        <th class="px-2 py-2">Tanggal Return</th>
                         <th class="px-2 py-2">Pembeli</th>
                         <th class="px-2 py-2">SKU</th>
                         <th class="px-2 py-2 text-right">Total Jual</th>
                         <th class="px-2 py-2 text-right">Total Modal</th>
+                        <th class="px-2 py-2">Status Saat Ini</th>
                         <th class="px-2 py-2">Catatan</th>
+                        <th class="px-2 py-2 text-right">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y">
@@ -67,16 +74,33 @@
                         <tr class="hover:bg-gray-50">
                             <td class="px-2 py-2">{{ $i + 1 }}</td>
                             <td class="px-2 py-2 font-mono">{{ $order->resi_number }}</td>
-                            <td class="px-2 py-2">{{ $order->order_date?->format('d/m/Y') ?? $order->updated_at?->format('d/m/Y') }}</td>
+                            <td class="px-2 py-2">{{ $order->returned_at?->format('d/m/Y H:i') ?? '-' }}</td>
                             <td class="px-2 py-2">{{ $order->buyer_name ?? '-' }}</td>
                             <td class="px-2 py-2 font-mono">{{ $skus ?: '-' }}</td>
                             <td class="px-2 py-2 text-right font-mono text-red-600">Rp {{ number_format($m['total_jual'], 0, ',', '.') }}</td>
                             <td class="px-2 py-2 text-right font-mono text-red-600">Rp {{ number_format($m['total_modal'], 0, ',', '.') }}</td>
+                            <td class="px-2 py-2">
+                                <span class="badge
+                                    {{ $order->status === 'pending' ? 'bg-amber-100 text-amber-700' : '' }}
+                                    {{ $order->status === 'packed' ? 'bg-green-100 text-green-700' : '' }}
+                                    {{ $order->status === 'selesai_bulan_kemarin' ? 'bg-blue-100 text-blue-700' : '' }}
+                                    {{ $order->status === 'return' ? 'bg-red-100 text-red-700' : '' }}">
+                                    {{ \App\Models\Order::STATUS_LABELS[$order->status] ?? ucfirst($order->status) }}
+                                </span>
+                            </td>
                             <td class="px-2 py-2 max-w-xs truncate" title="{{ $order->notes }}">{{ \Illuminate\Support\Str::limit($order->notes, 40) }}</td>
+                            <td class="px-2 py-2 text-right whitespace-nowrap">
+                                <form method="POST" action="{{ route('reports.returns.destroy', $order) }}" class="inline"
+                                      onsubmit="return confirm('Hapus pesanan {{ $order->resi_number }} dari Laporan Return?\n\nPesanan tidak akan dihapus, hanya catatan return-nya saja yang dibersihkan.');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="text-red-600 hover:underline">Hapus</button>
+                                </form>
+                            </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="py-6 text-center text-gray-500">Tidak ada pesanan return di bulan ini.</td>
+                            <td colspan="10" class="py-6 text-center text-gray-500">Tidak ada pesanan return di bulan ini.</td>
                         </tr>
                     @endforelse
                 </tbody>

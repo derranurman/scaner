@@ -18,7 +18,8 @@ class ReturnController extends Controller
     }
 
     /**
-     * Kelola Return — tampilkan pesanan yang statusnya "return".
+     * Kelola Return — tampilkan pesanan yang statusnya "return"
+     * (yaitu yang masih perlu ditangani / belum diterima kembali).
      */
     public function index(Request $request): View
     {
@@ -62,6 +63,9 @@ class ReturnController extends Controller
 
         $order->update([
             'status' => Order::STATUS_RETURN,
+            // returned_at = penanda permanen pesanan pernah di-return.
+            // Hanya di-set jika belum pernah ada (supaya tanggal awal tetap).
+            'returned_at' => $order->returned_at ?? now(),
             'notes' => trim($order->notes . "\n[RETURN] " . ($request->input('reason') ?? 'Tanpa alasan') . ' — ' . now()->format('d/m/Y H:i')),
         ]);
 
@@ -69,7 +73,8 @@ class ReturnController extends Controller
     }
 
     /**
-     * Kembalikan status dari return ke status sebelumnya (pending).
+     * Batal return: kembalikan pesanan ke status pending dan
+     * hapus penanda returned_at (return jadi tidak pernah terjadi).
      */
     public function undoReturn(Order $order): RedirectResponse
     {
@@ -77,15 +82,19 @@ class ReturnController extends Controller
             return back()->with('error', 'Pesanan ini tidak dalam status Return.');
         }
 
-        $order->update(['status' => Order::STATUS_PENDING]);
+        $order->update([
+            'status' => Order::STATUS_PENDING,
+            'returned_at' => null,
+        ]);
 
         return back()->with('success', "Pesanan {$order->resi_number} dikembalikan ke Pending.");
     }
 
     /**
      * Tandai bahwa barang return SUDAH DITERIMA kembali oleh toko.
-     * Otomatis menambah stok untuk setiap item, lalu tandai pesanan
-     * sebagai 'cancelled' (sudah selesai diproses sebagai return).
+     * Otomatis menambah stok untuk setiap item, lalu set status jadi
+     * "selesai_bulan_kemarin". `returned_at` SENGAJA TIDAK DIHAPUS
+     * supaya pesanan tetap muncul di Laporan Return sebagai histori.
      */
     public function receiveItems(Request $request, Order $order): RedirectResponse
     {
@@ -116,6 +125,8 @@ class ReturnController extends Controller
             $totalRestocked += (int) $item->quantity;
         }
 
+        // Pindahkan status, TAPI biarkan returned_at agar tetap tercatat
+        // di Laporan Return sebagai histori barang yang pernah di-return.
         $order->update([
             'status' => Order::STATUS_SELESAI_BULAN_KEMARIN,
             'notes' => trim($order->notes . "\n[BARANG DITERIMA] " . now()->format('d/m/Y H:i') . " — {$totalRestocked} unit dikembalikan ke stok"),

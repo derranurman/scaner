@@ -46,6 +46,7 @@ class Order extends Model
         'order_date',
         'packed_at',
         'packed_by_user_id',
+        'returned_at',
         'notes',
         'total_potongan_aplikasi_override',
     ];
@@ -55,6 +56,7 @@ class Order extends Model
         return [
             'order_date' => 'datetime',
             'packed_at' => 'datetime',
+            'returned_at' => 'datetime',
             'total_potongan_aplikasi_override' => 'decimal:2',
         ];
     }
