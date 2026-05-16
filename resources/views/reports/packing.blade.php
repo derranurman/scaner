@@ -6,7 +6,7 @@
     @php($subheader = 'Lihat aktivitas packing per user, lengkap dengan detail item & kelengkapan.')
 
     <div class="card">
-        <form method="GET" class="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+        <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
             <div>
                 <label class="label">Dari</label>
                 <input type="date" name="from" value="{{ $from }}" class="input">
@@ -24,6 +24,15 @@
                     @endforeach
                 </select>
             </div>
+            <div>
+                <label class="label">Jenis Barang</label>
+                <select name="type" class="input">
+                    <option value="">Semua jenis</option>
+                    @foreach ($types as $t)
+                        <option value="{{ $t }}" @selected($type === $t)>{{ $t }}</option>
+                    @endforeach
+                </select>
+            </div>
             <div class="flex gap-2">
                 <button class="btn-primary flex-1" type="submit">Filter</button>
                 <a href="{{ route('reports.packing') }}" class="btn-secondary">Reset</a>
@@ -32,6 +41,13 @@
                 <a href="{{ route('reports.packing.export', request()->query()) }}" class="btn-secondary w-full text-center">Export CSV</a>
             </div>
         </form>
+        @if ($type)
+            <p class="mt-3 text-xs text-gray-500">
+                Filter aktif: jenis barang
+                <span class="badge bg-indigo-100 text-indigo-700">{{ $type }}</span>.
+                Ringkasan hanya menghitung item dengan jenis ini.
+            </p>
+        @endif
     </div>
 
     <div class="card mt-6">
