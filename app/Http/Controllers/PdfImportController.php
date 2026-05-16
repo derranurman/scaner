@@ -47,7 +47,7 @@ class PdfImportController extends Controller
         }
 
         if (empty($rawPages)) {
-            return back()->with('error', 'Tidak ada resi yang terdeteksi di PDF. Pastikan format label TikTok Shop + J&T.');
+            return back()->with('error', 'Tidak ada resi yang terdeteksi di PDF. Pastikan format label TikTok Shop / Tokopedia + J&T Express / J&T Cargo / Shopee + SPX.');
         }
 
         // Resolve tiap halaman ke items dengan combo/sku match
@@ -68,6 +68,7 @@ class PdfImportController extends Controller
                 'order_date' => $page['order_date'],
                 'barang_keyword' => $page['barang_keyword'],
                 'seller_note' => $page['seller_note'],
+                'customer_message' => $page['customer_message'] ?? null,
                 'raw_text' => $page['raw_text'] ?? null,
                 'product_rows' => $page['product_rows'] ?? [],
                 'items' => $resolution['items'],

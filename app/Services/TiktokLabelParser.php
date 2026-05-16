@@ -9,22 +9,32 @@ use Smalot\PdfParser\Parser;
  *
  * Didukung:
  *  - TikTok Shop + J&T Express (resi JX/JP + kolom Weight/Ship/Order Id)
+ *  - TikTok Shop / Tokopedia + J&T Cargo (FastTrack) — sama tabel produk,
+ *    tapi resi & courier berbeda (J&T CARGO branding)
  *  - Shopee + SPX (Shopee Express) (resi SPXID + kolom Berat/Batas Kirim/No.Pesanan)
  *
  * Strategi: auto-detect format dari header teks, lalu walkLines()
  * dengan anchor keyword spesifik marketplace.
+ *
+ * Multi-page handling:
+ *  - Tiap PDF page diparse independen.
+ *  - Halaman tanpa resi tapi punya Order ID dianggap "continuation page"
+ *    (mis. halaman ke-2 J&T Express yang berisi Customer Message / Seller Note)
+ *    dan di-merge ke primary page dengan Order ID yang sama.
+ *  - Halaman dengan resi sama akan di-dedupe (ambil yang paling lengkap,
+ *    merge seller_note dari sisanya).
  */
 class TiktokLabelParser
 {
     /**
-     * @return array<int, array<string, mixed>> Satu entry per halaman (per pesanan)
+     * @return array<int, array<string, mixed>> Satu entry per pesanan
      */
     public function parseFile(string $pdfPath): array
     {
         $parser = new Parser();
         $pdf = $parser->parseFile($pdfPath);
 
-        $orders = [];
+        $allPages = [];
         $pages = $pdf->getPages();
 
         foreach ($pages as $index => $page) {
@@ -33,13 +43,200 @@ class TiktokLabelParser
                 continue;
             }
 
-            $parsed = $this->parseSinglePage($text, $index + 1);
-            if ($parsed['resi_number']) {
-                $orders[] = $parsed;
+            $allPages[] = $this->parseSinglePage($text, $index + 1);
+        }
+
+        return $this->consolidatePages($allPages);
+    }
+
+    /**
+     * Gabungkan halaman-halaman PDF menjadi daftar pesanan unik.
+     *
+     * Logika:
+     *  1. Pisahkan halaman primer (punya resi) dan halaman continuation
+     *     (tidak punya resi, hanya berisi info tambahan seperti Customer
+     *     Message / Seller Note pada layout 2-page J&T Express).
+     *  2. Dedupe halaman primer berdasarkan resi: kalau ada >1 halaman
+     *     dengan resi yang sama, ambil yang paling lengkap (punya
+     *     product_rows / buyer_name) sebagai primary, merge seller_note
+     *     dari sisanya.
+     *  3. Untuk tiap halaman continuation, cari primary dengan Order ID
+     *     yang sama dan merge seller_note + customer_message + raw_text.
+     *     Continuation tanpa primary yang cocok di-drop diam-diam.
+     *
+     * @param  array<int, array<string, mixed>>  $allPages
+     * @return array<int, array<string, mixed>>
+     */
+    private function consolidatePages(array $allPages): array
+    {
+        $primaryByResi = [];
+        $continuations = [];
+
+        foreach ($allPages as $page) {
+            if (! empty($page['resi_number'])) {
+                $resi = strtoupper((string) $page['resi_number']);
+                if (! isset($primaryByResi[$resi])) {
+                    $primaryByResi[$resi] = $page;
+                } else {
+                    // Resi duplikat: pilih halaman yang paling lengkap sebagai
+                    // primary, merge field tambahan dari yang lain.
+                    $primaryByResi[$resi] = $this->mergePrimaryPages($primaryByResi[$resi], $page);
+                }
+                continue;
+            }
+
+            // Halaman tanpa resi — kandidat continuation.
+            // Cuma simpan kalau ada Order ID atau seller_note / customer_message,
+            // selain itu drop (halaman noise).
+            $hasUseful = ! empty($page['tiktok_order_id'])
+                || ! empty($page['seller_note'])
+                || ! empty($page['customer_message']);
+            if ($hasUseful) {
+                $continuations[] = $page;
             }
         }
 
+        // Merge continuation pages ke primary by Order ID.
+        $primaryByOrderId = [];
+        foreach ($primaryByResi as $resi => $primary) {
+            $oid = (string) ($primary['tiktok_order_id'] ?? '');
+            if ($oid !== '') {
+                $primaryByOrderId[$oid] = &$primaryByResi[$resi];
+            }
+        }
+
+        foreach ($continuations as $cont) {
+            $oid = (string) ($cont['tiktok_order_id'] ?? '');
+            if ($oid === '' || ! isset($primaryByOrderId[$oid])) {
+                continue;
+            }
+            $this->mergeContinuationInto($primaryByOrderId[$oid], $cont);
+        }
+        unset($primaryByOrderId);
+
+        // Output urutkan berdasarkan halaman primer-nya.
+        $orders = array_values($primaryByResi);
+        usort($orders, fn ($a, $b) => (int) ($a['page'] ?? 0) <=> (int) ($b['page'] ?? 0));
+
         return $orders;
+    }
+
+    /**
+     * Gabung 2 halaman primer dengan resi yang sama. Pilih yang paling lengkap
+     * sebagai dasar, isi field kosong dari yang lain.
+     *
+     * @param  array<string, mixed>  $a
+     * @param  array<string, mixed>  $b
+     * @return array<string, mixed>
+     */
+    private function mergePrimaryPages(array $a, array $b): array
+    {
+        $scoreA = $this->pageCompletenessScore($a);
+        $scoreB = $this->pageCompletenessScore($b);
+
+        [$primary, $other] = $scoreB > $scoreA ? [$b, $a] : [$a, $b];
+
+        foreach (['tiktok_order_id', 'buyer_name', 'buyer_phone', 'sender_name',
+                  'shipping_address', 'weight', 'order_date', 'barang_keyword',
+                  'courier'] as $key) {
+            if (empty($primary[$key]) && ! empty($other[$key])) {
+                $primary[$key] = $other[$key];
+            }
+        }
+
+        if (empty($primary['product_rows']) && ! empty($other['product_rows'])) {
+            $primary['product_rows'] = $other['product_rows'];
+        }
+
+        // Seller note: gabung kalau berbeda.
+        $primary['seller_note'] = $this->joinDistinct($primary['seller_note'] ?? null, $other['seller_note'] ?? null);
+        if (! empty($other['customer_message'] ?? null)) {
+            $primary['customer_message'] = $this->joinDistinct(
+                $primary['customer_message'] ?? null,
+                $other['customer_message'] ?? null
+            );
+        }
+
+        // Raw text di-append (untuk debug)
+        if (! empty($other['raw_text'])) {
+            $primary['raw_text'] = trim(($primary['raw_text'] ?? '')."\n\n--- halaman ".($other['page'] ?? '?')." ---\n".$other['raw_text']);
+        }
+
+        return $primary;
+    }
+
+    /**
+     * Merge continuation page (tanpa resi) ke primary page by-reference.
+     *
+     * @param  array<string, mixed>  $primary
+     * @param  array<string, mixed>  $cont
+     */
+    private function mergeContinuationInto(array &$primary, array $cont): void
+    {
+        $primary['seller_note'] = $this->joinDistinct(
+            $primary['seller_note'] ?? null,
+            $cont['seller_note'] ?? null
+        );
+        if (! empty($cont['customer_message'] ?? null)) {
+            $primary['customer_message'] = $this->joinDistinct(
+                $primary['customer_message'] ?? null,
+                $cont['customer_message'] ?? null
+            );
+        }
+
+        // Append raw_text untuk debugging
+        if (! empty($cont['raw_text'])) {
+            $primary['raw_text'] = trim(($primary['raw_text'] ?? '')."\n\n--- halaman ".($cont['page'] ?? '?')." (lanjutan) ---\n".$cont['raw_text']);
+        }
+
+        // Kalau primary tidak ada seller_note tapi continuation punya
+        // customer_message, taruh sebagai seller_note juga supaya combo
+        // mapping yang baca seller_note bisa ketangkap.
+        if (empty($primary['seller_note']) && ! empty($cont['customer_message'] ?? null)) {
+            $primary['seller_note'] = $cont['customer_message'];
+        }
+    }
+
+    private function pageCompletenessScore(array $p): int
+    {
+        $score = 0;
+        if (! empty($p['product_rows'])) {
+            $score += 5;
+        }
+        if (! empty($p['buyer_name'])) {
+            $score += 2;
+        }
+        if (! empty($p['shipping_address'])) {
+            $score += 2;
+        }
+        if (! empty($p['barang_keyword'])) {
+            $score += 1;
+        }
+        if (! empty($p['seller_note'])) {
+            $score += 1;
+        }
+
+        return $score;
+    }
+
+    private function joinDistinct(?string $a, ?string $b): ?string
+    {
+        $a = trim((string) $a);
+        $b = trim((string) $b);
+        if ($a === '' && $b === '') {
+            return null;
+        }
+        if ($a === '') {
+            return $b;
+        }
+        if ($b === '' || mb_stripos($a, $b) !== false) {
+            return $a;
+        }
+        if (mb_stripos($b, $a) !== false) {
+            return $b;
+        }
+
+        return $a.' | '.$b;
     }
 
     private function cleanText(string $text): string
@@ -52,13 +249,24 @@ class TiktokLabelParser
     }
 
     /**
-     * Deteksi marketplace: 'shopee' kalau ada 'SPXID' / 'Shopee' / 'SPX',
-     * selain itu default 'tiktok'.
+     * Deteksi marketplace:
+     *  - 'shopee'    → ada 'SPXID' / 'Shopee' / 'SPX'
+     *  - 'tokopedia' → ada watermark 'tokopedia' (tanpa indikator Shopee)
+     *  - 'tiktok'    → default (juga dipakai untuk label TikTok Shop yang
+     *                  dikirim via J&T Cargo karena layout tabel produk sama)
      */
     private function detectMarketplace(string $text): string
     {
         if (preg_match('/\bSPXID\d+|\bShopee\b|\bSPX\b|Shop\s*Express/i', $text)) {
             return 'shopee';
+        }
+
+        // Tokopedia: hanya kalau ada watermark "tokopedia" tapi BUKAN TikTok Shop
+        // (banyak label TikTok Shop juga mencantumkan tokopedia footer).
+        $hasTokped = preg_match('/\btokopedia\b/i', $text) === 1;
+        $hasTiktok = preg_match('/\btiktok\b|TT\s*Order\s*ID/i', $text) === 1;
+        if ($hasTokped && ! $hasTiktok) {
+            return 'tokopedia';
         }
 
         return 'tiktok';
@@ -82,7 +290,7 @@ class TiktokLabelParser
             'page' => $pageNumber,
             'marketplace' => $marketplace,
             'raw_text' => $text,
-            'resi_number' => $this->extractResi($text),
+            'resi_number' => $this->extractResi($text, $marketplace),
             'tiktok_order_id' => $this->extractOrderId($text, $marketplace),
             'courier' => $this->extractCourier($text, $marketplace),
             'buyer_name' => $fields['buyer_name'],
@@ -94,6 +302,7 @@ class TiktokLabelParser
             'sender_name' => $fields['sender_name'],
             'product_rows' => $this->extractProductRows($text, $marketplace),
             'seller_note' => $this->extractSellerNote($text, $marketplace),
+            'customer_message' => $this->extractCustomerMessage($text),
         ];
     }
 
@@ -236,7 +445,7 @@ class TiktokLabelParser
         ];
     }
 
-    private function extractResi(string $text): ?string
+    private function extractResi(string $text, string $marketplace = 'tiktok'): ?string
     {
         // Shopee: SPXID + 10+ digit
         if (preg_match_all('/\b(SPXID\d{10,20})\b/i', $text, $matches)) {
@@ -246,7 +455,7 @@ class TiktokLabelParser
             return array_key_first($counts);
         }
 
-        // TikTok/J&T: JX/JP + 10-16 digit
+        // TikTok/J&T Express: JX/JP + 10-16 digit
         if (preg_match_all('/\b(J[XP]\d{10,16})\b/i', $text, $matches)) {
             $counts = array_count_values(array_map('strtoupper', $matches[1]));
             arsort($counts);
@@ -254,8 +463,45 @@ class TiktokLabelParser
             return array_key_first($counts);
         }
 
+        // J&T Cargo / Tokopedia / FastTrack: nomor resi numerik 10-16 digit,
+        // biasanya muncul sebagai barcode utama tepat di bawah header
+        // "J&T CARGO" / "FastTrack" / "TBN-..." routing code.
+        // Coba ambil angka panjang yang paling sering muncul.
+        $isCargo = preg_match('/J&T\s*CARGO|FastTrack/i', $text) === 1;
+        if ($isCargo || $marketplace === 'tokopedia') {
+            // Format 1: token TBN-XXXX-XX (sortation code, BUKAN resi tapi
+            // bisa jadi fallback unik).
+            $sortToken = null;
+            if (preg_match('/\b(TBN-[A-Z0-9]+-[A-Z0-9]+)\b/i', $text, $sm)) {
+                $sortToken = strtoupper(trim($sm[1]));
+            }
+
+            // Format 2: resi numerik 10-16 digit. Pilih yang paling sering muncul
+            // dan abaikan angka yang jelas-jelas Order ID (biasanya 16+ digit
+            // diawali "5840" pada TikTok atau didahului label "Order Id").
+            if (preg_match_all('/\b(\d{10,16})\b/', $text, $matches)) {
+                $orderIds = [];
+                if (preg_match_all('/(?:TT\s*Order\s*ID|Order\s*Id)\s*[:\-]?\s*(\d{10,24})/i', $text, $oidMatches)) {
+                    $orderIds = array_map('trim', $oidMatches[1]);
+                }
+                $candidates = array_diff($matches[1], $orderIds);
+                $candidates = array_filter($candidates, fn ($n) => strlen($n) >= 10 && strlen($n) <= 16);
+
+                if (! empty($candidates)) {
+                    $counts = array_count_values($candidates);
+                    arsort($counts);
+
+                    return (string) array_key_first($counts);
+                }
+            }
+
+            if ($sortToken) {
+                return $sortToken;
+            }
+        }
+
         // Fallback generik
-        if (preg_match('/(?:Resi|No\.?\s*Resi)\s*[:\-]?\s*([A-Z0-9]{10,24})/i', $text, $m)) {
+        if (preg_match('/(?:Resi|No\.?\s*Resi|AWB)\s*[:\-]?\s*([A-Z0-9\-]{10,24})/i', $text, $m)) {
             return strtoupper(trim($m[1]));
         }
 
@@ -268,6 +514,12 @@ class TiktokLabelParser
             if (preg_match('/No\.?\s*Pesanan\s*[:\-]?\s*([A-Z0-9]{8,24})/i', $text, $m)) {
                 return strtoupper(trim($m[1]));
             }
+        }
+
+        // TikTok di J&T Cargo: "TT Order ID : 58405...46303" — prioritaskan ini
+        // karena lebih jelas TikTok-nya.
+        if (preg_match('/TT\s*Order\s*ID\s*[:\-]?\s*(\d{10,24})/i', $text, $m)) {
+            return trim($m[1]);
         }
 
         // TikTok: "Order Id : 58394..." (digit saja)
@@ -287,6 +539,10 @@ class TiktokLabelParser
     {
         if ($marketplace === 'shopee') {
             return 'SPX';
+        }
+        // J&T Cargo (FastTrack) — cek dulu sebelum J&T Express
+        if (preg_match('/J&T\s*CARGO|J\s*&\s*T\s*CARGO|FastTrack/i', $text)) {
+            return 'JNT_CARGO';
         }
         if (preg_match('/J&T\s*Express|J\s*&\s*T/i', $text)) {
             return 'JNT';
@@ -1070,6 +1326,24 @@ class TiktokLabelParser
 
         if (preg_match('/Seller\s*Note\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
             return trim($m[1]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Customer Message muncul di halaman ke-2 label J&T Express bulk-print
+     * (TikTok Shop / Tokopedia). Format: "Customer Message: <pesan dari pembeli>".
+     * Field ini SEPARATE dari Seller Note dan dipakai untuk merging ke primary
+     * page lewat consolidatePages().
+     */
+    private function extractCustomerMessage(string $text): ?string
+    {
+        if (preg_match('/Customer\s*Message\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
+            $note = trim($m[1]);
+            if ($note !== '') {
+                return $note;
+            }
         }
 
         return null;

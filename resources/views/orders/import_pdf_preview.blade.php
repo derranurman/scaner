@@ -65,10 +65,21 @@
                                 <span class="text-xs text-gray-500">Hal. {{ $entry['page'] }}</span>
                                 <span class="font-mono text-lg font-bold">{{ $entry['resi_number'] ?: '—' }}</span>
                                 <?php $mp = $entry['marketplace'] ?? 'tiktok'; ?>
+                                <?php $cr = $entry['courier'] ?? 'JNT'; ?>
                                 <?php if ($mp === 'shopee'): ?>
                                     <span class="badge bg-orange-100 text-orange-700">Shopee / SPX</span>
+                                <?php elseif ($mp === 'tokopedia'): ?>
+                                    <?php if ($cr === 'JNT_CARGO'): ?>
+                                        <span class="badge bg-emerald-100 text-emerald-700">Tokopedia / J&amp;T Cargo</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-emerald-100 text-emerald-700">Tokopedia</span>
+                                    <?php endif; ?>
                                 <?php else: ?>
-                                    <span class="badge bg-indigo-100 text-indigo-700">TikTok / J&amp;T</span>
+                                    <?php if ($cr === 'JNT_CARGO'): ?>
+                                        <span class="badge bg-cyan-100 text-cyan-700">TikTok / J&amp;T Cargo</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-indigo-100 text-indigo-700">TikTok / J&amp;T</span>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ($entry['already_exists']): ?>
                                     <span class="badge bg-amber-100 text-amber-700">Sudah ada &middot; akan update</span>
@@ -144,6 +155,14 @@
                                         <?php endif; ?>
                                     </dd>
                                 </div>
+                                <?php if (!empty($entry['customer_message'])): ?>
+                                    <div class="flex items-start">
+                                        <dt class="w-28 text-gray-500 shrink-0">Customer Msg</dt>
+                                        <dd class="flex-1">
+                                            <span class="text-purple-700">{{ $entry['customer_message'] }}</span>
+                                        </dd>
+                                    </div>
+                                <?php endif; ?>
                             </dl>
 
                             {{-- Penerima & alamat (secondary, lebih redup) --}}
