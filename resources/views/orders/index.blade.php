@@ -153,9 +153,30 @@
                                     </form>
                                 </td>
 
-                                <td class="px-2 py-2">{{ $order->sender_name ?? '—' }}</td>
-                                <td class="px-2 py-2">{{ $order->buyer_name ?? '—' }}</td>
-                                <td class="px-2 py-2 font-mono">{{ $order->buyer_phone ?? '—' }}</td>
+                                <td class="px-2 py-2">
+                                    <form method="POST" action="{{ route('orders.update_meta', $order) }}" class="inline-flex items-center gap-1">
+                                        @csrf
+                                        <input type="text" name="sender_name" value="{{ $order->sender_name }}"
+                                               placeholder="—" class="input text-xs py-1 w-32">
+                                        <button type="submit" class="text-indigo-600 hover:underline text-xs">OK</button>
+                                    </form>
+                                </td>
+                                <td class="px-2 py-2">
+                                    <form method="POST" action="{{ route('orders.update_meta', $order) }}" class="inline-flex items-center gap-1">
+                                        @csrf
+                                        <input type="text" name="buyer_name" value="{{ $order->buyer_name }}"
+                                               placeholder="—" class="input text-xs py-1 w-32">
+                                        <button type="submit" class="text-indigo-600 hover:underline text-xs">OK</button>
+                                    </form>
+                                </td>
+                                <td class="px-2 py-2">
+                                    <form method="POST" action="{{ route('orders.update_meta', $order) }}" class="inline-flex items-center gap-1">
+                                        @csrf
+                                        <input type="text" name="buyer_phone" value="{{ $order->buyer_phone }}"
+                                               placeholder="—" class="input text-xs py-1 w-28 font-mono">
+                                        <button type="submit" class="text-indigo-600 hover:underline text-xs">OK</button>
+                                    </form>
+                                </td>
                                 <td class="px-2 py-2">
                                     <div class="max-w-[260px] truncate" title="{{ $namaDisplay }}">{{ $namaDisplay ?: '—' }}</div>
                                 </td>
