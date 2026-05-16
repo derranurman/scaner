@@ -118,6 +118,7 @@ class OrderController extends Controller
                 'Pengirim',
                 'Pembeli',
                 'No. HP',
+                'Nama Barang',
                 'SKU',
                 'Harga Jual',
                 'Total Jual',
@@ -152,6 +153,18 @@ class OrderController extends Controller
                 $m = $this->metrics->compute($order);
 
                 $skus = $order->items->pluck('sku')->filter()->unique()->implode(', ');
+                $names = $order->items
+                    ->map(function ($it) {
+                        // Master product name kalau ada, fallback ke snapshot di order_items.
+                        $name = $it->variant?->product?->name ?? $it->product_name;
+                        if ($it->variant?->name) {
+                            $name = trim(($name ?? '—') . ' — ' . $it->variant->name);
+                        }
+                        return $name;
+                    })
+                    ->filter()
+                    ->unique()
+                    ->implode(', ');
                 $hargaJual = (float) ($order->items->first()?->variant?->product?->selling_price ?? 0);
 
                 fputcsv($handle, [
@@ -163,6 +176,7 @@ class OrderController extends Controller
                     $order->sender_name ?? '—',
                     $order->buyer_name ?? '—',
                     $order->buyer_phone ?? '—',
+                    $names ?: '—',
                     $skus ?: '—',
                     $hargaJual,
                     $m['total_jual'],
