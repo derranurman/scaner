@@ -44,6 +44,7 @@
                         <th class="px-2 py-2">Pengirim</th>
                         <th class="px-2 py-2">Pembeli</th>
                         <th class="px-2 py-2">No. HP</th>
+                        <th class="px-2 py-2">Nama Barang</th>
                         <th class="px-2 py-2">SKU</th>
                         <th class="px-2 py-2 text-right">Harga Jual</th>
                         <th class="px-2 py-2 text-right">Total Jual</th>
@@ -74,7 +75,7 @@
                 <tbody class="divide-y">
                     <?php if ($orders->isEmpty()): ?>
                         <tr>
-                            <td colspan="32" class="py-6 text-center text-gray-500">
+                            <td colspan="33" class="py-6 text-center text-gray-500">
                                 Belum ada pesanan.
                                 <a href="{{ route('orders.import.pdf.show') }}" class="text-indigo-600 hover:underline">Import PDF &rarr;</a>
                                 <span class="text-gray-400">·</span>
@@ -86,18 +87,29 @@
                             <?php
                                 $m = $metrics[$order->id];
 
-                                // Ringkas: gabung SKU semua item, harga jual ambil item pertama.
+                                // Ringkas: gabung Nama Barang & SKU semua item, harga jual ambil item pertama.
                                 $skuList = [];
+                                $nameList = [];
                                 $firstSellingPrice = null;
                                 foreach ($order->items as $it) {
                                     if ($it->sku) {
                                         $skuList[] = $it->sku;
+                                    }
+                                    // Prioritas: nama master product, fallback ke product_name yang tersimpan
+                                    // di order_items (kalau master sudah dihapus).
+                                    $itName = $it->variant?->product?->name ?? $it->product_name;
+                                    if ($it->variant?->name) {
+                                        $itName = trim(($itName ?? '—') . ' — ' . $it->variant->name);
+                                    }
+                                    if ($itName) {
+                                        $nameList[] = $itName;
                                     }
                                     if ($firstSellingPrice === null) {
                                         $firstSellingPrice = (float) ($it->variant?->product?->selling_price ?? 0);
                                     }
                                 }
                                 $skuDisplay = implode(', ', array_unique($skuList));
+                                $namaDisplay = implode(', ', array_unique($nameList));
                                 $no = $startNo + $iOrder;
 
                                 $fmt = fn ($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
@@ -144,6 +156,7 @@
                                 <td class="px-2 py-2">{{ $order->sender_name ?? '—' }}</td>
                                 <td class="px-2 py-2">{{ $order->buyer_name ?? '—' }}</td>
                                 <td class="px-2 py-2 font-mono">{{ $order->buyer_phone ?? '—' }}</td>
+                                <td class="px-2 py-2 max-w-[260px] whitespace-normal" title="{{ $namaDisplay }}">{{ $namaDisplay ?: '—' }}</td>
                                 <td class="px-2 py-2 font-mono">{{ $skuDisplay ?: '—' }}</td>
 
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($firstSellingPrice ?? 0) }}</td>
