@@ -156,7 +156,9 @@
                                 <td class="px-2 py-2">{{ $order->sender_name ?? '—' }}</td>
                                 <td class="px-2 py-2">{{ $order->buyer_name ?? '—' }}</td>
                                 <td class="px-2 py-2 font-mono">{{ $order->buyer_phone ?? '—' }}</td>
-                                <td class="px-2 py-2 max-w-[260px] whitespace-normal" title="{{ $namaDisplay }}">{{ $namaDisplay ?: '—' }}</td>
+                                <td class="px-2 py-2">
+                                    <div class="max-w-[260px] truncate" title="{{ $namaDisplay }}">{{ $namaDisplay ?: '—' }}</div>
+                                </td>
                                 <td class="px-2 py-2 font-mono">{{ $skuDisplay ?: '—' }}</td>
 
                                 <td class="px-2 py-2 text-right font-mono">{{ $fmt($firstSellingPrice ?? 0) }}</td>
