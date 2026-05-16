@@ -296,16 +296,36 @@ class OrderController extends Controller
     }
 
     /**
-     * Update inline Host Live & Platform dari halaman Pesanan.
+     * Update inline Host Live, Platform, Pengirim, Pembeli, & No. HP
+     * dari halaman Pesanan. Field bersifat opsional supaya satu form
+     * bisa update kolom apa saja yang dia render.
      */
     public function updateMeta(Request $request, Order $order): RedirectResponse
     {
-        $data = $request->validate([
+        $request->validate([
             'host_live' => ['nullable', 'string', 'max:100'],
             'platform_deduction_id' => ['nullable', 'integer', 'exists:platform_deductions,id'],
+            'sender_name' => ['nullable', 'string', 'max:150'],
+            'buyer_name' => ['nullable', 'string', 'max:150'],
+            'buyer_phone' => ['nullable', 'string', 'max:30'],
         ]);
 
-        $order->update($data);
+        // Hanya update field yang BENAR-BENAR dikirim oleh form inline
+        // (mis. form Pembeli cuma mengirim buyer_name). Pakai `has()` supaya
+        // kolom lain tidak ke-overwrite jadi null gara-gara absen di request.
+        $allowed = ['host_live', 'platform_deduction_id', 'sender_name', 'buyer_name', 'buyer_phone'];
+        $data = [];
+        foreach ($allowed as $field) {
+            if ($request->has($field)) {
+                $value = $request->input($field);
+                // String kosong → null supaya kolom yang nullable tetap konsisten.
+                $data[$field] = ($value === '' ? null : $value);
+            }
+        }
+
+        if (! empty($data)) {
+            $order->update($data);
+        }
 
         return back()->with('success', "Pesanan {$order->resi_number} diperbarui.");
     }
