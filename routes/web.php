@@ -41,6 +41,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/scan', [ScanController::class, 'index'])->name('scan.index');
         Route::post('/scan/lookup', [ScanController::class, 'lookup'])->name('scan.lookup');
         Route::post('/scan/confirm', [ScanController::class, 'confirm'])->name('scan.confirm');
+
+        // Laporan packing — bisa diakses oleh user packing juga (bukan admin only)
+        Route::get('reports/packing', [PackingReportController::class, 'index'])->name('reports.packing');
+        Route::get('reports/packing/export', [PackingReportController::class, 'export'])->name('reports.packing.export');
     });
 
     // Admin only
@@ -96,8 +100,6 @@ Route::middleware('auth')->group(function () {
             ->except(['show']);
 
         // Reports
-        Route::get('reports/packing', [PackingReportController::class, 'index'])->name('reports.packing');
-        Route::get('reports/packing/export', [PackingReportController::class, 'export'])->name('reports.packing.export');
         Route::get('reports/products', [ProductReportController::class, 'index'])->name('reports.products');
         Route::get('reports/stock', [StockReportController::class, 'index'])->name('reports.stock');
         Route::get('reports/stock/export', [StockReportController::class, 'export'])->name('reports.stock.export');

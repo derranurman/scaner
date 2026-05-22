@@ -65,6 +65,7 @@
                         <x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">User</x-nav-link>
                     @elseif ($user?->isPacking())
                         <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
+                        <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.packing*')">Laporan Packing</x-nav-link>
                     @endif
                 </div>
             </div>
@@ -118,6 +119,7 @@
                 <x-responsive-nav-link :href="route('users.index')">User</x-responsive-nav-link>
             @elseif ($user?->isPacking())
                 <x-responsive-nav-link :href="route('scan.index')">Scan</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('reports.packing')">Laporan Packing</x-responsive-nav-link>
             @endif
             @auth
                 <div class="pt-3 border-t mt-2 text-sm">
