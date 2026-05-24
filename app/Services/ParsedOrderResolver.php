@@ -81,21 +81,13 @@ class ParsedOrderResolver
         $warnings = [];
         $matchedKeyword = null;
 
-        // ---- Strategi 1: cari combo mapping yang cocok dengan teks "Barang :"
-        //      atau seller_sku / product row. Mapping keyword = substring match.
-        $candidates = array_filter([
-            $parsed['barang_keyword'] ?? null,
-            ...array_map(fn ($r) => $r['seller_sku'] ?? null, $parsed['product_rows'] ?? []),
-            ...array_map(fn ($r) => $r['sku'] ?? null, $parsed['product_rows'] ?? []),
-        ]);
-
-        $combo = null;
-        foreach ($candidates as $cand) {
-            $combo = $this->findCombo((string) $cand);
-            if ($combo) {
-                $matchedKeyword = $combo->keyword;
-                break;
-            }
+        // ---- Strategi 1: cari combo mapping yang cocok dengan teks label
+        //      gabungan (barang_keyword + nama produk + seller_sku + sku).
+        //      Keyword yang berbentuk "Produk — Varian" akan dipecah dan
+        //      semua bagian harus muncul di label.
+        $combo = $this->findComboForLabel($parsed);
+        if ($combo) {
+            $matchedKeyword = $combo->keyword;
         }
 
         if ($combo) {
@@ -487,38 +479,54 @@ class ParsedOrderResolver
         ];
     }
 
-    private function findCombo(string $candidate): ?ComboMapping
+    /**
+     * Cari ComboMapping yang cocok untuk SELURUH label PDF.
+     *
+     * Algoritma:
+     *   1. Bangun "combined label text" dari semua sumber yang tersedia di
+     *      label: barang_keyword + nama produk per row + seller_sku + sku.
+     *   2. Pecah keyword mapping berdasarkan separator umum ("—" em-dash,
+     *      ",", "-" hyphen).
+     *   3. Tiap bagian non-kosong dari keyword harus muncul (case-insensitive,
+     *      sebagai substring) di combined label text. Kalau semua bagian
+     *      cocok → mapping match.
+     *
+     * Contoh:
+     *   keyword = "SPOILER MOBIL SEDAN MODEL GAWANG PENDEK UNIVERSAL — Default"
+     *   parts   = ["SPOILER MOBIL SEDAN MODEL GAWANG PENDEK UNIVERSAL", "Default"]
+     *
+     *   Label A: barang="Default", product_name="SPOILER MOBIL SEDAN MODEL GAWANG PENDEK UNIVERSAL"
+     *     combined = "Default SPOILER MOBIL SEDAN MODEL GAWANG PENDEK UNIVERSAL Default"
+     *     - "SPOILER MOBIL...UNIVERSAL" ada → ✓
+     *     - "Default" ada → ✓
+     *     → MATCH (benar)
+     *
+     *   Label B: barang="Default", product_name="SPOILER MOBIL MODEL CITY UNIVERSAL SEDAN"
+     *     combined = "Default SPOILER MOBIL MODEL CITY UNIVERSAL SEDAN Default"
+     *     - "SPOILER MOBIL SEDAN MODEL GAWANG PENDEK UNIVERSAL" ada? TIDAK (urutan kata beda)
+     *     → TIDAK MATCH (benar, beda produk)
+     */
+    private function findComboForLabel(array $parsed): ?ComboMapping
     {
-        $candidate = trim($candidate);
-        if ($candidate === '') {
+        $combined = $this->buildCombinedLabelText($parsed);
+        if ($combined === '') {
             return null;
         }
 
-        // Urutkan keyword terpanjang lebih dulu (biar mapping lebih spesifik menang)
+        // Urutkan keyword terpanjang dulu — keyword lebih spesifik menang
+        // atas keyword umum.
         $mappings = ComboMapping::with('items.variant.product')->get();
-        $mappings = $mappings->sortByDesc(fn ($m) => mb_strlen($m->keyword));
+        $mappings = $mappings->sortByDesc(fn ($m) => mb_strlen((string) $m->keyword));
 
         foreach ($mappings as $mapping) {
-            // Forward: keyword muncul di candidate (paling natural).
-            //   keyword = "Stir Racing"
-            //   candidate barang_keyword = "Stir Racing Mugen R13.5" → match
-            if (mb_stripos($candidate, $mapping->keyword) !== false) {
-                return $mapping;
+            $keyword = trim((string) $mapping->keyword);
+            if (mb_strlen($keyword) < 4) {
+                // Keyword super pendek (mis. "T2") di-handle di Strategi 1b
+                // (seller_note) dengan word-boundary, bukan di sini.
+                continue;
             }
 
-            // Reverse: candidate muncul di keyword. Ini dipakai kalau user
-            // simpan keyword PANJANG yang termasuk varian (mis.
-            //   "SPOILER MOBIL...UNIVERSAL — Default")
-            // sementara candidate dari PDF hanya bagian produknya saja
-            // (mis. "SPOILER MOBIL...UNIVERSAL").
-            //
-            // Tapi reverse-match HARUS substansial. Tanpa guard, candidate
-            // sependek "Default" atau "hitam" akan nge-trigger keyword
-            // panjang manapun yang punya substring tsb di ekor → cross-
-            // contamination antar produk. Karena itu kita wajibkan candidate:
-            //   - minimal 8 karakter, DAN
-            //   - minimal 50% dari panjang keyword.
-            if ($this->isSubstantialReverseMatch($candidate, $mapping->keyword)) {
+            if ($this->keywordPartsAllMatch($keyword, $combined)) {
                 return $mapping;
             }
         }
@@ -527,24 +535,47 @@ class ParsedOrderResolver
     }
 
     /**
-     * Cek apakah $candidate cukup substansial untuk dipertimbangkan sebagai
-     * reverse-substring match terhadap $keyword. Mencegah candidate pendek
-     * (mis. nama warna / "Default") meng-trigger keyword panjang manapun
-     * yang kebetulan punya substring tsb.
+     * Gabungkan semua field text dari label PDF jadi satu string panjang
+     * untuk dipakai sebagai bahan substring-match.
      */
-    private function isSubstantialReverseMatch(string $candidate, string $keyword): bool
+    private function buildCombinedLabelText(array $parsed): string
     {
-        $candLen = mb_strlen($candidate);
-        $kwLen = mb_strlen($keyword);
+        $parts = [];
+        $parts[] = (string) ($parsed['barang_keyword'] ?? '');
 
-        if ($candLen < 8) {
+        foreach ($parsed['product_rows'] ?? [] as $row) {
+            $parts[] = (string) ($row['product_name'] ?? '');
+            $parts[] = (string) ($row['seller_sku'] ?? '');
+            $parts[] = (string) ($row['sku'] ?? '');
+        }
+
+        $parts = array_filter(array_map('trim', $parts), fn ($s) => $s !== '');
+
+        return implode(' | ', $parts);
+    }
+
+    /**
+     * Pecah keyword berdasarkan separator umum (em-dash, comma, hyphen) lalu
+     * cek apakah SEMUA bagian non-kosong muncul di $combined text.
+     */
+    private function keywordPartsAllMatch(string $keyword, string $combined): bool
+    {
+        // "\x{2014}" adalah em-dash (—). Hyphen biasa "-" juga di-split supaya
+        // keyword seperti "Stir-Bosskit" tidak harus exact match.
+        $parts = preg_split('/\s*[\x{2014},]\s*/u', $keyword) ?: [];
+        $parts = array_values(array_filter(array_map('trim', $parts), fn ($s) => $s !== ''));
+
+        if (empty($parts)) {
             return false;
         }
-        if ($kwLen === 0 || $candLen / $kwLen < 0.5) {
-            return false;
+
+        foreach ($parts as $part) {
+            if (mb_stripos($combined, $part) === false) {
+                return false;
+            }
         }
 
-        return mb_stripos($keyword, $candidate) !== false;
+        return true;
     }
 
     /**
@@ -583,26 +614,23 @@ class ParsedOrderResolver
     }
 
     /**
-     * Cek keyword cocok di dalam candidate. Untuk keyword pendek (<=3 char),
-     * pakai word-boundary supaya keyword "T2" tidak false-match "T23" atau "T20".
+     * Cek keyword cocok di seller_note.
+     *
+     * Untuk keyword pendek (<4 char) pakai word-boundary supaya keyword "T2"
+     * tidak false-match "T23" / "T20".
+     *
+     * Untuk keyword panjang, dipecah dulu berdasarkan separator (—, comma,
+     * hyphen) lalu SEMUA bagian harus muncul di seller_note. Konsisten
+     * dengan logika di Strategi 1.
      */
     private function keywordMatches(string $candidate, string $keyword): bool
     {
-        // Keyword panjang (>=4 char): substring case-insensitive.
         if (mb_strlen($keyword) >= 4) {
-            // Forward: keyword muncul di candidate.
-            if (mb_stripos($candidate, $keyword) !== false) {
-                return true;
-            }
-            // Reverse: candidate muncul di keyword. Sama seperti findCombo,
-            // candidate harus substansial supaya keyword panjang tidak
-            // ke-trigger oleh fragment pendek.
-            return $this->isSubstantialReverseMatch($candidate, $keyword);
+            return $this->keywordPartsAllMatch($keyword, $candidate);
         }
 
-        // Keyword pendek: harus berdiri di word-boundary.
-        //   - huruf/digit sebelum-sesudah keyword harus bukan alphanumeric
-        //   - contoh: "T2" cocok di "Ferio (T2)" tapi TIDAK cocok di "T23"
+        // Keyword super pendek: word-boundary match.
+        //   "T2" cocok di "Ferio (T2)" tapi TIDAK cocok di "T23"
         $pattern = '/(?<![A-Za-z0-9])'.preg_quote($keyword, '/').'(?![A-Za-z0-9])/iu';
 
         return preg_match($pattern, $candidate) === 1;
