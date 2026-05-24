@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ComboMapping;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\PdfParseDraft;
+use App\Models\Variant;
 use App\Services\ParsedOrderResolver;
 use App\Services\TiktokLabelParser;
 use Illuminate\Http\RedirectResponse;
@@ -94,7 +96,87 @@ class PdfImportController extends Controller
     {
         abort_if($draft->status !== PdfParseDraft::STATUS_DRAFT, 404, 'Draft ini sudah tidak aktif.');
 
-        return view('orders.import_pdf_preview', compact('draft'));
+        $variants = Variant::with('product')
+            ->orderBy('product_id')
+            ->orderBy('name')
+            ->get();
+
+        return view('orders.import_pdf_preview', compact('draft', 'variants'));
+    }
+
+    /**
+     * Re-run resolver pada draft yang sudah ada, supaya combo mapping baru
+     * langsung kepakai TANPA harus upload ulang PDF.
+     */
+    public function remap(PdfParseDraft $draft): RedirectResponse
+    {
+        abort_if($draft->status !== PdfParseDraft::STATUS_DRAFT, 404);
+
+        $this->reresolveDraft($draft);
+
+        return redirect()->route('orders.import.pdf.preview', $draft)
+            ->with('success', 'Mapping disinkronisasi ulang dari data PDF yang sudah ada.');
+    }
+
+    /**
+     * Buat combo mapping baru dari layar pratinjau LALU langsung re-resolve
+     * draft, supaya item yang tadinya "perlu mapping" otomatis ter-mapping.
+     */
+    public function quickMapping(Request $request, PdfParseDraft $draft): RedirectResponse
+    {
+        abort_if($draft->status !== PdfParseDraft::STATUS_DRAFT, 404);
+
+        $request->validate([
+            'keyword' => ['required', 'string', 'max:150', 'unique:combo_mappings,keyword'],
+            'description' => ['nullable', 'string', 'max:255'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.variant_id' => ['required', 'integer', 'exists:variants,id'],
+            'items.*.quantity' => ['required', 'integer', 'min:1'],
+        ]);
+
+        DB::transaction(function () use ($request) {
+            $mapping = ComboMapping::create([
+                'keyword' => $request->input('keyword'),
+                'description' => $request->input('description'),
+            ]);
+
+            foreach ((array) $request->input('items', []) as $it) {
+                if (empty($it['variant_id'])) {
+                    continue;
+                }
+                $mapping->items()->create([
+                    'variant_id' => (int) $it['variant_id'],
+                    'quantity' => max(1, (int) ($it['quantity'] ?? 1)),
+                ]);
+            }
+        });
+
+        $this->reresolveDraft($draft);
+
+        return redirect()->route('orders.import.pdf.preview', $draft)
+            ->with('success', 'Mapping "'.$request->input('keyword').'" dibuat & langsung diterapkan ke pratinjau.');
+    }
+
+    /**
+     * Jalankan ulang ParsedOrderResolver pada parsed_orders yang sudah
+     * tersimpan di draft, lalu update kembali kolom JSON-nya.
+     */
+    private function reresolveDraft(PdfParseDraft $draft): void
+    {
+        $entries = $draft->parsed_orders ?? [];
+        if (empty($entries)) {
+            return;
+        }
+
+        foreach ($entries as $idx => $entry) {
+            $resolution = $this->resolver->resolve($entry);
+            $entry['items'] = $resolution['items'];
+            $entry['warnings'] = $resolution['warnings'];
+            $entry['matched_keyword'] = $resolution['matchedKeyword'];
+            $entries[$idx] = $entry;
+        }
+
+        $draft->update(['parsed_orders' => $entries]);
     }
 
     public function commit(Request $request, PdfParseDraft $draft): RedirectResponse
