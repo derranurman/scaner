@@ -84,17 +84,71 @@ class ParsedOrderResolver
         $orderQty = $this->totalQtyFromRows($parsed['product_rows'] ?? []) ?: 1;
 
         // =====================================================================
-        // STRATEGI 1 vs 2 (eksklusif) — resolusi BARANG UTAMA pesanan
+        // STRATEGI 2 (FONDASI) — resolusi per baris produk di label.
         // =====================================================================
+        // Selalu jalan duluan. product_rows dianggap "kebenaran utama" (apa
+        // yang tertulis di tabel produk label). Combo cuma additive di atasnya.
+        foreach ($parsed['product_rows'] ?? [] as $row) {
+            $resolved = $this->resolveRow($row, $sellerNote);
+            $items[] = $resolved;
+            if ($resolved['source'] === 'unmatched') {
+                $warnings[] = "Baris produk '{$resolved['product_name']}' belum cocok dengan master. Tambahkan Combo Mapping atau padankan SKU.";
+            }
+        }
 
-        // ---- Strategi 1: combo mapping dari teks label gabungan (barang_keyword
-        //      + nama produk + seller_sku + sku). Keyword "Produk — Varian"
-        //      dipecah, semua bagian harus muncul di label. Kalau match,
-        //      combo ini menggantikan resolusi per-row karena keyword udah
-        //      mendefinisikan apa yang harus dikirim untuk pesanan ini.
+        // Fallback: kalau tidak ada product_rows sama sekali, simpan
+        // barang_keyword sebagai item unmatched.
+        if (empty($items) && ! empty($parsed['barang_keyword'])) {
+            $items[] = [
+                'product_name' => $parsed['barang_keyword'],
+                'variant_name' => null,
+                'sku' => null,
+                'variant_id' => null,
+                'quantity' => 1,
+                'source' => 'unmatched',
+                'matched_keyword' => null,
+            ];
+            $warnings[] = "Tidak menemukan tabel produk. Disimpan sebagai '{$parsed['barang_keyword']}'. Buat combo mapping untuk ini.";
+        }
+
+        // =====================================================================
+        // STRATEGI 1 — combo mapping dari teks label (barang_keyword +
+        // product_name + seller_sku + sku). ADDITIVE.
+        // =====================================================================
+        //
+        // Kalau combo match, item-nya DITAMBAHKAN. Tidak menggantikan stir
+        // dari per-row. Use case:
+        //   product_rows: STIR RACING (matched by name)
+        //   seller_sku  : "boskit+stir, TOYOTA LAMA"
+        //   Combo       : "boskit+stir, TOYOTA LAMA" → 1 boskit
+        //   Output      : 1 stir + 1 boskit
+        //
+        // Edge case: kalau per-row HANYA punya item unmatched (mis. label
+        // berisi "PROMO BUNDLE 123" yang nggak ada master-nya) DAN combo
+        // match, kita drop item unmatched-nya, karena combo jelas mendefinisi
+        // ulang apa yang harus dikirim untuk label ini.
         $combo = $this->findComboForLabel($parsed);
         if ($combo) {
             $matchedKeyword = $combo->keyword;
+
+            // Drop semua item unmatched dari per-row + warning-nya, karena
+            // combo nge-cover label ini.
+            $hadUnmatched = false;
+            $items = array_values(array_filter($items, function ($i) use (&$hadUnmatched) {
+                if (($i['source'] ?? null) === 'unmatched') {
+                    $hadUnmatched = true;
+                    return false;
+                }
+                return true;
+            }));
+            if ($hadUnmatched) {
+                $warnings = array_values(array_filter(
+                    $warnings,
+                    fn ($w) => ! str_starts_with($w, 'Baris produk ')
+                        && ! str_starts_with($w, 'Tidak menemukan tabel produk')
+                ));
+            }
+
             foreach ($combo->items as $ci) {
                 $v = $ci->variant;
                 if (! $v) {
@@ -111,50 +165,21 @@ class ParsedOrderResolver
                     'matched_keyword' => $combo->keyword,
                 ];
             }
-        } else {
-            // ---- Strategi 2: tiap baris produk di label di-resolve secara
-            //      independen via name match / SKU match / seller-note match.
-            foreach ($parsed['product_rows'] ?? [] as $row) {
-                $resolved = $this->resolveRow($row, $sellerNote);
-                $items[] = $resolved;
-                if ($resolved['source'] === 'unmatched') {
-                    $warnings[] = "Baris produk '{$resolved['product_name']}' belum cocok dengan master. Tambahkan Combo Mapping atau padankan SKU.";
-                }
-            }
-
-            // Fallback terakhir: kalau tidak ada product_rows sama sekali,
-            // simpan barang_keyword sebagai item unmatched.
-            if (empty($items) && ! empty($parsed['barang_keyword'])) {
-                $items[] = [
-                    'product_name' => $parsed['barang_keyword'],
-                    'variant_name' => null,
-                    'sku' => null,
-                    'variant_id' => null,
-                    'quantity' => 1,
-                    'source' => 'unmatched',
-                    'matched_keyword' => null,
-                ];
-                $warnings[] = "Tidak menemukan tabel produk. Disimpan sebagai '{$parsed['barang_keyword']}'. Buat combo mapping untuk ini.";
-            }
         }
 
         // =====================================================================
-        // STRATEGI 1b — combo mapping dari SELLER NOTE
+        // STRATEGI 1b — combo mapping dari SELLER NOTE. ADDITIVE.
         // =====================================================================
-        //
-        // Selalu jalan di atas hasil Strategi 1/2. Seller note biasanya berisi
-        // catatan tambahan (mis. "+Bosskit T16 solder", "+freebies stiker"),
-        // jadi combo yang match di sini bersifat ADDITIVE — ditambahkan ke
-        // items, bukan menggantikan.
         //
         // Match SEMUA keyword yang cocok (bukan hanya yang pertama), supaya
         // keyword pendek seperti "T2" bisa ketangkap di samping keyword
         // panjang seperti "+Bosskit Ferio".
         //
-        // Contoh kasus user:
-        //   Label  : product_rows = [stir racing], seller_note = "t16 solder"
-        //   Combo  : keyword "t16 solder" → bosskit T16
-        //   Output : [stir racing (dari Strategi 2), bosskit T16 (dari 1b)]
+        // Use case:
+        //   product_rows: STIR RACING (matched by name → Strategi 2)
+        //   seller_note : "t16 solder"
+        //   Combo       : "t16 solder" → 1 bosskit T16
+        //   Output      : 1 stir + 1 bosskit T16
         if ($sellerNote !== '') {
             $excludeIds = $combo ? [$combo->id] : [];
             $noteCombos = $this->findAllCombos($sellerNote, $excludeIds);
@@ -184,13 +209,13 @@ class ParsedOrderResolver
                         $matchedKeyword .= ' + '.$noteCombo->keyword.' (Note)';
                     }
                 }
-
-                // Gabungkan item dengan variant_id sama supaya stok tidak
-                // double-potong (kalau combo barang & combo seller note
-                // kebetulan nunjuk varian yang sama).
-                $items = $this->mergeItemsByVariant($items);
             }
         }
+
+        // Gabungkan item dengan variant_id yang sama. Lihat mergeItemsByVariant
+        // — sekarang pakai MAX qty (bukan SUM) supaya per-row + combo yang
+        // ngepoint ke varian sama tidak double-potong stok.
+        $items = $this->mergeItemsByVariant($items);
 
         return compact('items', 'warnings', 'matchedKeyword');
     }
@@ -637,8 +662,14 @@ class ParsedOrderResolver
 
     /**
      * Gabung item dengan variant_id yang sama supaya stok tidak double-potong.
-     * Kalau 2 combo mapping nunjuk ke varian yang sama, qty-nya dijumlah dan
-     * matched_keyword-nya digabung.
+     *
+     * Pakai MAX qty (bukan SUM): kalau per-row resolution dan combo Strategi 1
+     * sama-sama nge-resolve ke varian yang sama (combo "Stir Racing" → 1 stir
+     * sementara product_row juga punya 1 stir), output jadi 1 stir, bukan 2.
+     *
+     * Konsekuensinya: kalau user explicitly bikin combo "+freebie 1 stir
+     * tambahan" untuk produk yang sudah di-resolve per-row, qty tidak akan
+     * tambah. Untuk freebie, mapping varian-nya harus beda dari yang utama.
      *
      * @param array<int, array<string, mixed>> $items
      * @return array<int, array<string, mixed>>
@@ -648,6 +679,8 @@ class ParsedOrderResolver
         $merged = [];
 
         foreach ($items as $item) {
+            // Item tanpa variant_id (unmatched) tidak di-dedup — biarkan apa
+            // adanya supaya user tahu masih ada baris yang belum ke-mapping.
             $key = $item['variant_id'] ?? spl_object_hash((object) $item);
 
             if (! isset($merged[$key])) {
@@ -655,7 +688,11 @@ class ParsedOrderResolver
                 continue;
             }
 
-            $merged[$key]['quantity'] += $item['quantity'];
+            // MAX qty supaya tidak double-count stok.
+            $merged[$key]['quantity'] = max(
+                (int) $merged[$key]['quantity'],
+                (int) $item['quantity']
+            );
 
             $existingKeyword = $merged[$key]['matched_keyword'] ?? '';
             $newKeyword = $item['matched_keyword'] ?? '';
