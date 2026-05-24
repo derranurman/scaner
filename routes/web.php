@@ -90,6 +90,8 @@ Route::middleware('auth')->group(function () {
         Route::post('orders-import-pdf', [PdfImportController::class, 'upload'])->name('orders.import.pdf.upload');
         Route::get('orders-import-pdf/{draft}', [PdfImportController::class, 'preview'])->name('orders.import.pdf.preview');
         Route::post('orders-import-pdf/{draft}/commit', [PdfImportController::class, 'commit'])->name('orders.import.pdf.commit');
+        Route::post('orders-import-pdf/{draft}/remap', [PdfImportController::class, 'remap'])->name('orders.import.pdf.remap');
+        Route::post('orders-import-pdf/{draft}/quick-mapping', [PdfImportController::class, 'quickMapping'])->name('orders.import.pdf.quick_mapping');
         Route::delete('orders-import-pdf/{draft}', [PdfImportController::class, 'discard'])->name('orders.import.pdf.discard');
         Route::delete('orders-import-pdf/{draft}/destroy', [PdfImportController::class, 'destroy'])->name('orders.import.pdf.destroy');
 

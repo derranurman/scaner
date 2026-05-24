@@ -12,6 +12,11 @@
                 <div><span class="text-gray-500">Halaman:</span> {{ $draft->total_pages }} · Diupload {{ $draft->created_at->diffForHumans() }}</div>
             </div>
             <div class="flex gap-2">
+                <form method="POST" action="{{ route('orders.import.pdf.remap', $draft) }}"
+                      title="Jalankan ulang resolver dengan mapping terkini, tanpa upload PDF lagi">
+                    @csrf
+                    <button class="btn-secondary" type="submit">Sinkronkan Mapping</button>
+                </form>
                 <form method="POST" action="{{ route('orders.import.pdf.discard', $draft) }}"
                       onsubmit="return confirm('Buang draft ini? Tidak akan disimpan sebagai pesanan.');">
                     @csrf
@@ -22,6 +27,7 @@
         </div>
     </div>
 
+<div x-data="quickMapping()" x-on:open-mapping.window="open($event.detail)">
     <form method="POST" action="{{ route('orders.import.pdf.commit', $draft) }}">
         @csrf
 
@@ -227,6 +233,22 @@
                                                 <?php endif; ?>
                                             </span>
                                             <span class="badge {{ $sourceBadge[1] }}">{{ $sourceBadge[0] }}</span>
+                                            <?php if ($source === 'unmatched'): ?>
+                                                <?php
+                                                    $defaultKw = $entry['barang_keyword'] ?? '';
+                                                    if (trim((string) $defaultKw) === '') {
+                                                        $defaultKw = $item['product_name'] ?? '';
+                                                    }
+                                                    $defaultDesc = trim('Auto dari label: '.($item['product_name'] ?? ''));
+                                                ?>
+                                                <button type="button"
+                                                        class="text-xs text-indigo-700 hover:text-indigo-900 underline decoration-dotted"
+                                                        data-keyword="{{ $defaultKw }}"
+                                                        data-description="{{ $defaultDesc }}"
+                                                        @click="$dispatch('open-mapping', { keyword: $el.dataset.keyword, description: $el.dataset.description })">
+                                                    Atur Mapping
+                                                </button>
+                                            <?php endif; ?>
                                         </li>
                                     <?php endforeach; ?>
                                 </ul>
@@ -253,11 +275,102 @@
         </div>
     </form>
 
+    {{-- Modal: Atur Mapping cepat. Submit ke endpoint quick_mapping yang sekaligus
+         menjalankan ulang resolver pada draft, jadi item yang tadinya "perlu mapping"
+         langsung ter-mapping tanpa upload PDF lagi. --}}
+    <div x-show="visible"
+         x-cloak
+         x-transition.opacity
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+         @keydown.escape.window="close()"
+         style="display: none;">
+        <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+             @click.outside="close()">
+            <form method="POST" :action="actionUrl" class="p-5 space-y-4">
+                @csrf
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h2 class="text-lg font-bold">Atur Mapping</h2>
+                        <p class="text-xs text-gray-500">
+                            Setelah disimpan, mapping akan langsung diterapkan ke pratinjau ini.
+                            Tidak perlu upload PDF resi lagi.
+                        </p>
+                    </div>
+                    <button type="button" class="text-gray-400 hover:text-gray-600 text-lg leading-none"
+                            @click="close()" aria-label="Tutup">&times;</button>
+                </div>
+
+                <div>
+                    <label class="label">Keyword (harus unik)</label>
+                    <input name="keyword" x-model="keyword" required
+                           class="input font-mono"
+                           placeholder="contoh: Stir Racing Mugen R13,5">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Teks ini dicari (case-insensitive) di Barang / Seller SKU / Seller Note label PDF.
+                    </p>
+                </div>
+
+                <div>
+                    <label class="label">Deskripsi (opsional)</label>
+                    <input name="description" x-model="description" class="input">
+                </div>
+
+                <div>
+                    <label class="label">Pecah menjadi varian</label>
+                    <div class="space-y-2">
+                        <template x-for="(item, i) in items" :key="i">
+                            <div class="flex gap-2 items-center">
+                                <select :name="'items[' + i + '][variant_id]'" x-model="item.variant_id" required class="input flex-1">
+                                    <option value="">— pilih varian —</option>
+                                    @foreach ($variants as $v)
+                                        <option value="{{ $v->id }}">{{ $v->product?->name }} — {{ $v->name }} ({{ $v->sku }})</option>
+                                    @endforeach
+                                </select>
+                                <input type="number" min="1" :name="'items[' + i + '][quantity]'"
+                                       x-model.number="item.quantity" required
+                                       class="input w-20 text-center">
+                                <button type="button" class="btn-secondary" @click="remove(i)" x-show="items.length > 1">−</button>
+                            </div>
+                        </template>
+                    </div>
+                    <button type="button" class="btn-secondary mt-2" @click="add()">+ Tambah Varian</button>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t">
+                    <button type="button" class="btn-secondary" @click="close()">Batal</button>
+                    <button type="submit" class="btn-primary">Simpan &amp; Terapkan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>{{-- /x-data quickMapping --}}
+
     <script>
         document.getElementById('select-all').addEventListener('change', function (e) {
             document.querySelectorAll('.item-check').forEach(function (c) {
                 c.checked = e.target.checked;
             });
         });
+
+        function quickMapping() {
+            return {
+                visible: false,
+                actionUrl: @json(route('orders.import.pdf.quick_mapping', $draft)),
+                keyword: '',
+                description: '',
+                items: [{ variant_id: '', quantity: 1 }],
+                open(data) {
+                    this.keyword = (data && data.keyword) || '';
+                    this.description = (data && data.description) || '';
+                    this.items = [{ variant_id: '', quantity: 1 }];
+                    this.visible = true;
+                },
+                close() {
+                    this.visible = false;
+                },
+                add() { this.items.push({ variant_id: '', quantity: 1 }); },
+                remove(i) { this.items.splice(i, 1); },
+            };
+        }
     </script>
 @endsection
