@@ -237,22 +237,26 @@
                                                 <?php
                                                     // Bangun keyword PERSIS seperti yang ditampilkan
                                                     // di kolom "Item Setelah Resolusi", yaitu:
-                                                    //   "{product_name} — {variant_name}[, {seller_note}]"
+                                                    //   "{product_name} — {variant_name}"
                                                     // Format ini dipilih supaya:
                                                     //   1. User langsung tahu apa yang akan disimpan
                                                     //      tanpa harus ngedit field keyword.
-                                                    //   2. Keyword cukup spesifik supaya tidak nyangkut
-                                                    //      ke order lain via reverse-substring match
-                                                    //      (resolver tetap bisa cocok karena
-                                                    //      barang_keyword PDF jadi substring keyword).
+                                                    //   2. Keyword cocok dengan combined label text
+                                                    //      (barang_keyword + product_name + seller_sku
+                                                    //      + sku) di resolver, jadi auto re-resolve
+                                                    //      langsung apply.
+                                                    //
+                                                    // Seller note SENGAJA tidak ikut di keyword
+                                                    // karena seller_note tidak masuk ke combined
+                                                    // label text. Kalau user mau seller_note (mis.
+                                                    // "t16 solder") trigger combo terpisah, bikin
+                                                    // Combo Mapping dengan keyword "t16 solder" lewat
+                                                    // menu Combo Mapping biasa.
                                                     $kwName = trim((string) ($item['product_name'] ?? ''));
                                                     $kwVariant = trim((string) ($item['variant_name'] ?? ''));
                                                     $defaultKw = $kwName;
                                                     if ($kwVariant !== '') {
                                                         $defaultKw = $kwName.' — '.$kwVariant;
-                                                    }
-                                                    if ($appendNote && !empty($sellerNote)) {
-                                                        $defaultKw .= ', '.$sellerNote;
                                                     }
                                                     if ($defaultKw === '') {
                                                         $defaultKw = (string) ($entry['barang_keyword'] ?? '');

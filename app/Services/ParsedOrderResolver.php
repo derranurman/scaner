@@ -35,6 +35,25 @@ use App\Models\Variant;
 class ParsedOrderResolver
 {
     /**
+     * Keyword yang menandakan pesanan punya item TAMBAHAN selain produk
+     * utama (mis. boskit/bosskit dijual bareng stir, atau solder addon).
+     *
+     * Kalau seller_sku ATAU seller_note mengandung salah satu keyword di
+     * bawah, per-row resolution tidak akan auto-match — item dikembalikan
+     * sebagai 'unmatched' supaya user EXPLICITLY bikin Combo Mapping yang
+     * mendefinisi apa saja yang harus dikirim (stir + boskit + dst.).
+     *
+     * Tujuannya: cegah auto-match yang nge-skip item-item addon, yang
+     * akibatnya barang yang dikirim ke pembeli kurang.
+     *
+     * @var array<int, string>
+     */
+    private const COMBO_HINT_KEYWORDS = [
+        'boskit',
+        'bosskit',
+    ];
+
+    /**
      * Kamus warna EN↔ID. Dipakai dua arah saat matching varian.
      *
      * @var array<string, array<int, string>>
@@ -92,7 +111,14 @@ class ParsedOrderResolver
             $resolved = $this->resolveRow($row, $sellerNote);
             $items[] = $resolved;
             if ($resolved['source'] === 'unmatched') {
-                $warnings[] = "Baris produk '{$resolved['product_name']}' belum cocok dengan master. Tambahkan Combo Mapping atau padankan SKU.";
+                $sellerSkuRow = trim((string) ($row['seller_sku'] ?? ''));
+                if ($this->hasComboHint($sellerSkuRow, $sellerNote)) {
+                    // Triggered oleh keyword combo (boskit/bosskit/dst.).
+                    // Pesan lebih spesifik supaya user tahu kenapa.
+                    $warnings[] = "Baris produk '{$resolved['product_name']}' kelihatannya pesanan combo (mengandung 'boskit'/'bosskit' di SKU/Note). Klik 'Atur Mapping' untuk definisi item lengkap (stir + boskit + dst.).";
+                } else {
+                    $warnings[] = "Baris produk '{$resolved['product_name']}' belum cocok dengan master. Tambahkan Combo Mapping atau padankan SKU.";
+                }
             }
         }
 
@@ -231,6 +257,31 @@ class ParsedOrderResolver
     }
 
     /**
+     * Deteksi apakah seller_sku ATAU seller_note mengandung keyword combo
+     * (boskit/bosskit/dst.). Kalau iya, per-row resolution tidak akan
+     * auto-match — user harus eksplisit bikin Combo Mapping.
+     *
+     * Ini cegah skenario di mana stir auto-resolved tapi bosskit-nya
+     * ke-skip karena gak ada di product_rows.
+     */
+    private function hasComboHint(string $sellerSku, string $sellerNote): bool
+    {
+        $haystack = trim($sellerSku.' '.$sellerNote);
+        if ($haystack === '') {
+            return false;
+        }
+
+        $haystackLower = mb_strtolower($haystack);
+        foreach (self::COMBO_HINT_KEYWORDS as $hint) {
+            if (mb_stripos($haystackLower, $hint) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Resolve satu baris produk ke Variant master.
      *
      * Urutan strategi (stop di yang pertama match):
@@ -253,6 +304,23 @@ class ParsedOrderResolver
         // Teks pencarian untuk strategi nama: nama + variasi (seller_sku)
         // supaya "Black" dari kolom variasi ikut jadi sinyal pemilihan varian.
         $labelText = trim($name.' '.$sellerSku);
+
+        // ---- Combo hint guard ----
+        // Kalau seller_sku atau seller_note mengandung keyword combo
+        // (boskit/bosskit/dst.), skip auto-match. Pesanan ini kemungkinan
+        // punya item tambahan, jadi user harus bikin Combo Mapping yang
+        // mendefinisi semua item secara eksplisit.
+        if ($this->hasComboHint($sellerSku, $sellerNote)) {
+            return [
+                'product_name' => $name ?: '—',
+                'variant_name' => $sellerSku ?: ($sku ?: null),
+                'sku' => $sku ?: null,
+                'variant_id' => null,
+                'quantity' => $qty,
+                'source' => 'unmatched',
+                'matched_keyword' => null,
+            ];
+        }
 
         // ---- 1. Match via NAMA produk ----
         $byName = $this->matchByProductName($labelText);
