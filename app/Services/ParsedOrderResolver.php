@@ -112,10 +112,11 @@ class ParsedOrderResolver
             $items[] = $resolved;
             if ($resolved['source'] === 'unmatched') {
                 $sellerSkuRow = trim((string) ($row['seller_sku'] ?? ''));
-                if ($this->hasComboHint($sellerSkuRow, $sellerNote)) {
-                    // Triggered oleh keyword combo (boskit/bosskit/dst.).
-                    // Pesan lebih spesifik supaya user tahu kenapa.
-                    $warnings[] = "Baris produk '{$resolved['product_name']}' kelihatannya pesanan combo (mengandung 'boskit'/'bosskit' di SKU/Note). Klik 'Atur Mapping' untuk definisi item lengkap (stir + boskit + dst.).";
+                $hintReason = $this->comboHintReason($sellerSkuRow, $sellerNote);
+                if ($hintReason === 'seller_note') {
+                    $warnings[] = "Baris produk '{$resolved['product_name']}' ada Seller Note (\"{$sellerNote}\"). Cek isinya — mungkin pembeli minta addon/freebie. Klik 'Atur Mapping' untuk definisi item lengkap.";
+                } elseif ($hintReason === 'sku_keyword') {
+                    $warnings[] = "Baris produk '{$resolved['product_name']}' kelihatannya pesanan combo (mengandung 'boskit'/'bosskit' di SKU). Klik 'Atur Mapping' untuk definisi item lengkap (stir + boskit + dst.).";
                 } else {
                     $warnings[] = "Baris produk '{$resolved['product_name']}' belum cocok dengan master. Tambahkan Combo Mapping atau padankan SKU.";
                 }
@@ -257,28 +258,48 @@ class ParsedOrderResolver
     }
 
     /**
-     * Deteksi apakah seller_sku ATAU seller_note mengandung keyword combo
-     * (boskit/bosskit/dst.). Kalau iya, per-row resolution tidak akan
-     * auto-match — user harus eksplisit bikin Combo Mapping.
+     * Deteksi apakah baris ini punya "combo hint" — sinyal bahwa pesanan
+     * kemungkinan punya item TAMBAHAN selain produk utama. Kalau iya,
+     * per-row resolution tidak akan auto-match — user harus eksplisit
+     * bikin Combo Mapping.
      *
-     * Ini cegah skenario di mana stir auto-resolved tapi bosskit-nya
-     * ke-skip karena gak ada di product_rows.
+     * Trigger:
+     *   1. Seller note non-kosong. Seller note umumnya berisi instruksi
+     *      tambahan dari pembeli (addon, freebie, "t16 solder", dst.).
+     *      Lebih safe dianggap perlu mapping manual daripada auto-match
+     *      stir-nya doang sementara addon-nya ke-skip.
+     *   2. Seller SKU mengandung keyword combo (mis. "boskit+stir,
+     *      TOYOTA LAMA" → ada "boskit").
+     *
+     * Cegah skenario di mana stir auto-resolved tapi bosskit-nya ke-skip
+     * karena gak ada di product_rows.
+     *
+     * @return string|null Alasan trigger ('seller_note' / 'sku_keyword' /
+     *                     null kalau tidak match)
      */
-    private function hasComboHint(string $sellerSku, string $sellerNote): bool
+    private function comboHintReason(string $sellerSku, string $sellerNote): ?string
     {
-        $haystack = trim($sellerSku.' '.$sellerNote);
-        if ($haystack === '') {
-            return false;
+        // 1. Seller note ada → trigger.
+        if (trim($sellerNote) !== '') {
+            return 'seller_note';
         }
 
-        $haystackLower = mb_strtolower($haystack);
-        foreach (self::COMBO_HINT_KEYWORDS as $hint) {
-            if (mb_stripos($haystackLower, $hint) !== false) {
-                return true;
+        // 2. Seller SKU mengandung keyword combo.
+        $haystack = mb_strtolower(trim($sellerSku));
+        if ($haystack !== '') {
+            foreach (self::COMBO_HINT_KEYWORDS as $hint) {
+                if (mb_stripos($haystack, $hint) !== false) {
+                    return 'sku_keyword';
+                }
             }
         }
 
-        return false;
+        return null;
+    }
+
+    private function hasComboHint(string $sellerSku, string $sellerNote): bool
+    {
+        return $this->comboHintReason($sellerSku, $sellerNote) !== null;
     }
 
     /**
