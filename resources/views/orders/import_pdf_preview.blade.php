@@ -235,11 +235,33 @@
                                             <span class="badge {{ $sourceBadge[1] }}">{{ $sourceBadge[0] }}</span>
                                             <?php if ($source === 'unmatched'): ?>
                                                 <?php
-                                                    $defaultKw = $entry['barang_keyword'] ?? '';
-                                                    if (trim((string) $defaultKw) === '') {
-                                                        $defaultKw = $item['product_name'] ?? '';
+                                                    // Bangun keyword PERSIS seperti yang ditampilkan
+                                                    // di kolom "Item Setelah Resolusi", yaitu:
+                                                    //   "{product_name} — {variant_name}"
+                                                    // Format ini dipilih supaya:
+                                                    //   1. User langsung tahu apa yang akan disimpan
+                                                    //      tanpa harus ngedit field keyword.
+                                                    //   2. Keyword cocok dengan combined label text
+                                                    //      (barang_keyword + product_name + seller_sku
+                                                    //      + sku) di resolver, jadi auto re-resolve
+                                                    //      langsung apply.
+                                                    //
+                                                    // Seller note SENGAJA tidak ikut di keyword
+                                                    // karena seller_note tidak masuk ke combined
+                                                    // label text. Kalau user mau seller_note (mis.
+                                                    // "t16 solder") trigger combo terpisah, bikin
+                                                    // Combo Mapping dengan keyword "t16 solder" lewat
+                                                    // menu Combo Mapping biasa.
+                                                    $kwName = trim((string) ($item['product_name'] ?? ''));
+                                                    $kwVariant = trim((string) ($item['variant_name'] ?? ''));
+                                                    $defaultKw = $kwName;
+                                                    if ($kwVariant !== '') {
+                                                        $defaultKw = $kwName.' — '.$kwVariant;
                                                     }
-                                                    $defaultDesc = trim('Auto dari label: '.($item['product_name'] ?? ''));
+                                                    if ($defaultKw === '') {
+                                                        $defaultKw = (string) ($entry['barang_keyword'] ?? '');
+                                                    }
+                                                    $defaultDesc = $defaultKw;
                                                 ?>
                                                 <button type="button"
                                                         class="text-xs text-indigo-700 hover:text-indigo-900 underline decoration-dotted"

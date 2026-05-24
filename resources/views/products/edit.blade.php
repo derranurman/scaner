@@ -107,9 +107,9 @@
                                     <td class="py-2"><input name="name" value="{{ $v->name }}" class="input" required></td>
                                     <td class="py-2"><input name="sku" value="{{ $v->sku }}" class="input font-mono" required></td>
                                     <td class="py-2">
-                                        <div class="flex items-center gap-2">
-                                            <span class="font-semibold {{ $v->isLowStock() ? 'text-red-600' : '' }}">{{ $v->stock }}</span>
-                                        </div>
+                                        <input name="stock" value="{{ $v->stock }}" type="number" min="0" required
+                                               class="input w-24 {{ $v->isLowStock() ? 'border-red-500 text-red-600 font-semibold' : '' }}"
+                                               title="Set stok ke nilai ini. Selisihnya akan dicatat di Riwayat Stok (audit trail).">
                                     </td>
                                     <td class="py-2"><input name="min_stock" value="{{ $v->min_stock }}" type="number" min="0" class="input w-20"></td>
                                     <td class="py-2">

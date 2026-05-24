@@ -96,6 +96,15 @@ class PdfImportController extends Controller
     {
         abort_if($draft->status !== PdfParseDraft::STATUS_DRAFT, 404, 'Draft ini sudah tidak aktif.');
 
+        // Auto re-resolve setiap kali preview dibuka, supaya:
+        //  - ComboMapping yang baru saja dibuat di tab lain langsung kepakai
+        //  - draft lama (yang resolver-nya pakai versi kode lama) ke-refresh
+        //    dengan logic matching yang sekarang
+        // Operasi ini idempotent: kalau mapping & resolver tidak berubah,
+        // hasilnya identik dengan parsed_orders yang sudah tersimpan.
+        $this->reresolveDraft($draft);
+        $draft->refresh();
+
         $variants = Variant::with('product')
             ->orderBy('product_id')
             ->orderBy('name')
@@ -127,11 +136,13 @@ class PdfImportController extends Controller
         abort_if($draft->status !== PdfParseDraft::STATUS_DRAFT, 404);
 
         $request->validate([
-            'keyword' => ['required', 'string', 'max:150', 'unique:combo_mappings,keyword'],
+            'keyword' => ['required', 'string', 'min:6', 'max:150', 'unique:combo_mappings,keyword'],
             'description' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.variant_id' => ['required', 'integer', 'exists:variants,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1'],
+        ], [
+            'keyword.min' => 'Keyword minimal 6 karakter. Pakai nama produk yang spesifik (jangan cuma "Default" / nama warna), supaya tidak nyangkut ke order lain.',
         ]);
 
         DB::transaction(function () use ($request) {
