@@ -34,10 +34,33 @@ class VariantController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'sku' => ['required', 'string', 'max:100', 'unique:variants,sku,'.$variant->id],
+            'stock' => ['required', 'integer', 'min:0'],
             'min_stock' => ['required', 'integer', 'min:0'],
         ]);
 
-        $variant->update($data);
+        $newStock = (int) $data['stock'];
+        $oldStock = (int) $variant->stock;
+        $delta = $newStock - $oldStock;
+
+        // Update field non-stok dulu (nama / sku / min_stock).
+        $variant->update([
+            'name' => $data['name'],
+            'sku' => $data['sku'],
+            'min_stock' => $data['min_stock'],
+        ]);
+
+        // Kalau stok berubah, salurkan via StockService supaya tetap ada
+        // audit trail di stock_movements (jangan langsung set kolom stock).
+        if ($delta !== 0) {
+            $this->stock->adjust(
+                $variant,
+                $delta,
+                StockMovement::TYPE_ADJUSTMENT,
+                $request->user()->id,
+                null,
+                "Edit stok manual ({$oldStock} → {$newStock})",
+            );
+        }
 
         return back()->with('success', 'Varian diperbarui.');
     }
