@@ -15,12 +15,17 @@
                         <option value="{{ $t }}" {{ $type === $t ? 'selected' : '' }}>{{ $t }}</option>
                     @endforeach
                 </select>
+                <select name="status" class="input w-40">
+                    <option value="">— Semua Status —</option>
+                    <option value="low" {{ $status === 'low' ? 'selected' : '' }}>LOW</option>
+                    <option value="ok" {{ $status === 'ok' ? 'selected' : '' }}>OK</option>
+                </select>
                 <button class="btn-primary" type="submit">Filter</button>
-                @if ($q || $type)
+                @if ($q || $type || $status)
                     <a href="{{ route('reports.stock') }}" class="btn-secondary">Reset</a>
                 @endif
             </form>
-            <a href="{{ route('reports.stock.export', ['type' => $type]) }}" class="btn-primary">
+            <a href="{{ route('reports.stock.export', ['type' => $type, 'status' => $status]) }}" class="btn-primary">
                 ⬇ Export Excel (CSV)
             </a>
         </div>

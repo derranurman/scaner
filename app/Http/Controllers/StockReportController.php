@@ -13,8 +13,21 @@ class StockReportController extends Controller
     {
         $q = trim((string) $request->query('q', ''));
         $type = trim((string) $request->query('type', ''));
+        $status = strtolower(trim((string) $request->query('status', '')));
 
-        $products = Product::with('variants')
+        if (! in_array($status, ['low', 'ok'], true)) {
+            $status = '';
+        }
+
+        $variantStatusFilter = function ($query) use ($status) {
+            if ($status === 'low') {
+                $query->whereColumn('stock', '<=', 'min_stock');
+            } elseif ($status === 'ok') {
+                $query->whereColumn('stock', '>', 'min_stock');
+            }
+        };
+
+        $products = Product::with(['variants' => $variantStatusFilter])
             ->where('is_active', true)
             ->when($q !== '', function ($query) use ($q) {
                 $query->where(function ($sub) use ($q) {
@@ -24,6 +37,9 @@ class StockReportController extends Controller
                 });
             })
             ->when($type !== '', fn ($query) => $query->where('type', $type))
+            ->when($status !== '', function ($query) use ($variantStatusFilter) {
+                $query->whereHas('variants', $variantStatusFilter);
+            })
             ->orderBy('name')
             ->get();
 
@@ -35,16 +51,32 @@ class StockReportController extends Controller
             ->orderBy('type')
             ->pluck('type');
 
-        return view('reports.stock', compact('products', 'q', 'type', 'types'));
+        return view('reports.stock', compact('products', 'q', 'type', 'status', 'types'));
     }
 
     public function export(Request $request): StreamedResponse
     {
         $type = trim((string) $request->query('type', ''));
+        $status = strtolower(trim((string) $request->query('status', '')));
 
-        $products = Product::with('variants')
+        if (! in_array($status, ['low', 'ok'], true)) {
+            $status = '';
+        }
+
+        $variantStatusFilter = function ($query) use ($status) {
+            if ($status === 'low') {
+                $query->whereColumn('stock', '<=', 'min_stock');
+            } elseif ($status === 'ok') {
+                $query->whereColumn('stock', '>', 'min_stock');
+            }
+        };
+
+        $products = Product::with(['variants' => $variantStatusFilter])
             ->where('is_active', true)
             ->when($type !== '', fn ($query) => $query->where('type', $type))
+            ->when($status !== '', function ($query) use ($variantStatusFilter) {
+                $query->whereHas('variants', $variantStatusFilter);
+            })
             ->orderBy('name')
             ->get();
 
