@@ -235,11 +235,29 @@
                                             <span class="badge {{ $sourceBadge[1] }}">{{ $sourceBadge[0] }}</span>
                                             <?php if ($source === 'unmatched'): ?>
                                                 <?php
-                                                    $defaultKw = $entry['barang_keyword'] ?? '';
-                                                    if (trim((string) $defaultKw) === '') {
-                                                        $defaultKw = $item['product_name'] ?? '';
+                                                    // Bangun keyword PERSIS seperti yang ditampilkan
+                                                    // di kolom "Item Setelah Resolusi", yaitu:
+                                                    //   "{product_name} — {variant_name}[, {seller_note}]"
+                                                    // Format ini dipilih supaya:
+                                                    //   1. User langsung tahu apa yang akan disimpan
+                                                    //      tanpa harus ngedit field keyword.
+                                                    //   2. Keyword cukup spesifik supaya tidak nyangkut
+                                                    //      ke order lain via reverse-substring match
+                                                    //      (resolver tetap bisa cocok karena
+                                                    //      barang_keyword PDF jadi substring keyword).
+                                                    $kwName = trim((string) ($item['product_name'] ?? ''));
+                                                    $kwVariant = trim((string) ($item['variant_name'] ?? ''));
+                                                    $defaultKw = $kwName;
+                                                    if ($kwVariant !== '') {
+                                                        $defaultKw = $kwName.' — '.$kwVariant;
                                                     }
-                                                    $defaultDesc = trim('Auto dari label: '.($item['product_name'] ?? ''));
+                                                    if ($appendNote && !empty($sellerNote)) {
+                                                        $defaultKw .= ', '.$sellerNote;
+                                                    }
+                                                    if ($defaultKw === '') {
+                                                        $defaultKw = (string) ($entry['barang_keyword'] ?? '');
+                                                    }
+                                                    $defaultDesc = $defaultKw;
                                                 ?>
                                                 <button type="button"
                                                         class="text-xs text-indigo-700 hover:text-indigo-900 underline decoration-dotted"

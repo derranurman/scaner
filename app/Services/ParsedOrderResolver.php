@@ -499,16 +499,52 @@ class ParsedOrderResolver
         $mappings = $mappings->sortByDesc(fn ($m) => mb_strlen($m->keyword));
 
         foreach ($mappings as $mapping) {
+            // Forward: keyword muncul di candidate (paling natural).
+            //   keyword = "Stir Racing"
+            //   candidate barang_keyword = "Stir Racing Mugen R13.5" → match
             if (mb_stripos($candidate, $mapping->keyword) !== false) {
                 return $mapping;
             }
-            // Juga coba kebalikan (kalau candidate lebih pendek)
-            if (mb_stripos($mapping->keyword, $candidate) !== false) {
+
+            // Reverse: candidate muncul di keyword. Ini dipakai kalau user
+            // simpan keyword PANJANG yang termasuk varian (mis.
+            //   "SPOILER MOBIL...UNIVERSAL — Default")
+            // sementara candidate dari PDF hanya bagian produknya saja
+            // (mis. "SPOILER MOBIL...UNIVERSAL").
+            //
+            // Tapi reverse-match HARUS substansial. Tanpa guard, candidate
+            // sependek "Default" atau "hitam" akan nge-trigger keyword
+            // panjang manapun yang punya substring tsb di ekor → cross-
+            // contamination antar produk. Karena itu kita wajibkan candidate:
+            //   - minimal 8 karakter, DAN
+            //   - minimal 50% dari panjang keyword.
+            if ($this->isSubstantialReverseMatch($candidate, $mapping->keyword)) {
                 return $mapping;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Cek apakah $candidate cukup substansial untuk dipertimbangkan sebagai
+     * reverse-substring match terhadap $keyword. Mencegah candidate pendek
+     * (mis. nama warna / "Default") meng-trigger keyword panjang manapun
+     * yang kebetulan punya substring tsb.
+     */
+    private function isSubstantialReverseMatch(string $candidate, string $keyword): bool
+    {
+        $candLen = mb_strlen($candidate);
+        $kwLen = mb_strlen($keyword);
+
+        if ($candLen < 8) {
+            return false;
+        }
+        if ($kwLen === 0 || $candLen / $kwLen < 0.5) {
+            return false;
+        }
+
+        return mb_stripos($keyword, $candidate) !== false;
     }
 
     /**
@@ -552,10 +588,16 @@ class ParsedOrderResolver
      */
     private function keywordMatches(string $candidate, string $keyword): bool
     {
-        // Keyword panjang (>=4 char): substring case-insensitive biasa.
+        // Keyword panjang (>=4 char): substring case-insensitive.
         if (mb_strlen($keyword) >= 4) {
-            return mb_stripos($candidate, $keyword) !== false
-                || mb_stripos($keyword, $candidate) !== false;
+            // Forward: keyword muncul di candidate.
+            if (mb_stripos($candidate, $keyword) !== false) {
+                return true;
+            }
+            // Reverse: candidate muncul di keyword. Sama seperti findCombo,
+            // candidate harus substansial supaya keyword panjang tidak
+            // ke-trigger oleh fragment pendek.
+            return $this->isSubstantialReverseMatch($candidate, $keyword);
         }
 
         // Keyword pendek: harus berdiri di word-boundary.
