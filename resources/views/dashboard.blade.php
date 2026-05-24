@@ -47,15 +47,29 @@
             @else
                 <div class="divide-y">
                     @foreach ($lowStock as $v)
-                        <div class="py-2 flex items-center justify-between text-sm">
-                            <div>
-                                <div class="font-medium">{{ $v->product?->name }} — {{ $v->name }}</div>
-                                <div class="text-xs text-gray-500 font-mono">{{ $v->sku }}</div>
+                        @if ($v->product)
+                            <a href="{{ route('products.edit', $v->product) }}"
+                               class="py-2 -mx-2 px-2 flex items-center justify-between text-sm rounded-md hover:bg-gray-50 transition-colors"
+                               title="Klik untuk edit produk & sesuaikan stok">
+                                <div class="min-w-0 pr-3">
+                                    <div class="font-medium text-gray-900 truncate">{{ $v->product->name }} &mdash; {{ $v->name }}</div>
+                                    <div class="text-xs text-gray-500 font-mono truncate">{{ $v->sku }}</div>
+                                </div>
+                                <span class="badge shrink-0 {{ $v->stock <= 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' }}">
+                                    {{ $v->stock }} / min {{ $v->min_stock }}
+                                </span>
+                            </a>
+                        @else
+                            <div class="py-2 flex items-center justify-between text-sm">
+                                <div class="min-w-0 pr-3">
+                                    <div class="font-medium text-gray-900 truncate">{{ $v->name }}</div>
+                                    <div class="text-xs text-gray-500 font-mono truncate">{{ $v->sku }}</div>
+                                </div>
+                                <span class="badge shrink-0 {{ $v->stock <= 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' }}">
+                                    {{ $v->stock }} / min {{ $v->min_stock }}
+                                </span>
                             </div>
-                            <span class="badge {{ $v->stock <= 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700' }}">
-                                {{ $v->stock }} / min {{ $v->min_stock }}
-                            </span>
-                        </div>
+                        @endif
                     @endforeach
                 </div>
             @endif
