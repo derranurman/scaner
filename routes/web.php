@@ -69,6 +69,7 @@ Route::middleware('auth')->group(function () {
         // Orders
         Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
         Route::get('orders/export', [OrderController::class, 'export'])->name('orders.export');
+        Route::delete('orders/bulk-destroy', [OrderController::class, 'bulkDestroy'])->name('orders.bulk_destroy');
         Route::view('orders/info-rumus', 'orders.info_rumus')->name('orders.info_rumus');
         Route::get('orders/create', [OrderController::class, 'create'])->name('orders.create');
         Route::post('orders', [OrderController::class, 'store'])->name('orders.store');

@@ -190,6 +190,10 @@ class ParsedOrderResolver
                     'quantity' => $ci->quantity * $orderQty,
                     'source' => 'combo',
                     'matched_keyword' => $combo->keyword,
+                    // ID combo mapping yang men-trigger item ini, dipakai
+                    // tombol "Edit Mapping" di pratinjau supaya modal bisa
+                    // pre-fill keyword/items dari mapping yang persis ini.
+                    'combo_mapping_id' => $combo->id,
                 ];
             }
         }
@@ -227,6 +231,7 @@ class ParsedOrderResolver
                             'quantity' => $ci->quantity * $orderQty,
                             'source' => 'combo',
                             'matched_keyword' => $noteCombo->keyword.' (Seller Note)',
+                            'combo_mapping_id' => $noteCombo->id,
                         ];
                     }
 
@@ -456,7 +461,12 @@ class ParsedOrderResolver
      * dengan "racing" atau "semi merah-merahan" dst:
      *   - Nama varian exact (word-boundary) di label: 10 poin
      *   - Token varian (split by space/slash/dash) ketemu word-boundary: 5 poin
+     *     (token 1-karakter ikut dihitung supaya varian "Biru 2" bisa beat
+     *     "Biru" untuk label "Biru 2".)
      *   - Synonym warna (Black↔Hitam) ketemu word-boundary: 10 poin
+     *
+     * Tie-break: skor sama → varian dengan NAMA LEBIH PANJANG menang
+     * (lebih spesifik). Cegah label "Biru 2" salah pilih varian "Biru".
      *
      * SKU varian TIDAK dihitung di sini — ada strategi SKU match terpisah di
      * resolver. Ini supaya SKU yang kebetulan punya token umum ("R14") tidak
@@ -486,6 +496,7 @@ class ParsedOrderResolver
 
         $best = null;
         $bestScore = 0;
+        $bestNameLen = 0;
         $bestReason = '';
 
         foreach ($variants as $v) {
@@ -504,10 +515,13 @@ class ParsedOrderResolver
             }
 
             // 2. Tiap token nama varian (word-boundary).
+            //    Token 1-karakter (mis. "2" pada varian "Biru 2") tetap
+            //    dihitung supaya varian "Biru 2" punya skor lebih tinggi
+            //    dari "Biru" saat label-nya berisi "Biru 2".
             $tokens = preg_split('/[\s,\/\-_]+/u', mb_strtolower($vname)) ?: [];
             foreach ($tokens as $token) {
                 $token = trim($token);
-                if (mb_strlen($token) < 2) {
+                if ($token === '') {
                     continue;
                 }
                 if ($this->hasWord($labelLower, $token)) {
@@ -524,9 +538,19 @@ class ParsedOrderResolver
                 }
             }
 
-            if ($score > $bestScore) {
+            // Tie-break: kalau skor sama, varian dengan nama lebih PANJANG
+            // menang (lebih spesifik). Tanpa ini, urutan iterasi koleksi
+            // (yang biasanya by id) menentukan pemenang — bug nyata: SKU
+            // label "Biru 2" memilih varian "Biru" karena "Biru" lebih dulu
+            // di koleksi dan kedua varian ber-skor sama 15 poin.
+            $vlen = mb_strlen($vname);
+            $isBetter = $score > $bestScore
+                || ($score === $bestScore && $score > 0 && $vlen > $bestNameLen);
+
+            if ($isBetter) {
                 $best = $v;
                 $bestScore = $score;
+                $bestNameLen = $vlen;
                 $bestReason = $reasonParts ? implode(', ', array_unique($reasonParts)) : '';
             }
         }
@@ -542,13 +566,26 @@ class ParsedOrderResolver
     }
 
     /**
-     * Cek apakah $needle muncul sebagai kata (word-boundary) di $haystack.
-     * Case-insensitive. $haystack diasumsikan sudah lowercase.
+     * Cek apakah $needle muncul di $haystack sebagai "kata" — dengan
+     * toleransi separator di antara token huruf/digit. Case-insensitive,
+     * $haystack diasumsikan sudah lowercase.
      *
-     * Word-boundary di sini: karakter sebelum & sesudah harus bukan huruf/digit.
-     * Contoh: hasWord("stir racing new skeleton import r14\" black", "black")
-     *         → TRUE (preceded by space, followed by end)
-     *         hasWord("stir racing new skeleton", "red") → FALSE
+     * Toleransi yang dimaksud:
+     *   - Letter↔digit boundary dianggap pemisah opsional. Varian master
+     *     "Biru2" (tanpa spasi) cocok dengan label "Biru 2" (dengan spasi),
+     *     dan sebaliknya.
+     *   - Separator non-alfanumerik di antara token disamakan. "abu-abu"
+     *     juga match "abu abu" / "abuabu".
+     *
+     * Word-boundary luar tetap dijaga: needle "biru" tidak nyangkut di
+     * "biru2", needle "biru2" tidak nyangkut di "biru20".
+     *
+     * Contoh:
+     *   hasWord("stir ... biru 2, ...",   "biru2") → TRUE
+     *   hasWord("stir ... biru 2, ...",   "biru")  → TRUE
+     *   hasWord("stir ... biru 2, ...",   "biru3") → FALSE
+     *   hasWord("stir ... biru, ...",     "biru2") → FALSE
+     *   hasWord("blackjack ...",          "black") → FALSE
      */
     private function hasWord(string $haystack, string $needle): bool
     {
@@ -557,7 +594,37 @@ class ParsedOrderResolver
             return false;
         }
 
-        $pattern = '/(?<![A-Za-z0-9])'.preg_quote($needle, '/').'(?![A-Za-z0-9])/iu';
+        // Pecah needle jadi run-run alfanumerik (drop semua separator),
+        // lalu pecah lagi di setiap letter↔digit boundary supaya pattern
+        // bisa nyari label yang punya pemisah di posisi tsb.
+        //   "biru2"   → ["biru", "2"]
+        //   "biru 2"  → ["biru", "2"]
+        //   "abu-abu" → ["abu", "abu"]
+        //   "merah"   → ["merah"]
+        $runs = preg_split('/[^A-Za-z0-9]+/u', $needle, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        $parts = [];
+        foreach ($runs as $r) {
+            $sub = preg_split('/(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])/u', $r) ?: [];
+            foreach ($sub as $s) {
+                if ($s !== '') {
+                    $parts[] = $s;
+                }
+            }
+        }
+
+        if (empty($parts)) {
+            return false;
+        }
+
+        // Rangkai jadi pattern: setiap bagian di-quote, dirangkai dengan
+        // separator non-alfanumerik opsional. Outer word-boundary pakai
+        // negative lookbehind/lookahead alfanumerik.
+        $core = implode(
+            '[^A-Za-z0-9]*',
+            array_map(fn ($s) => preg_quote($s, '/'), $parts)
+        );
+        $pattern = '/(?<![A-Za-z0-9])'.$core.'(?![A-Za-z0-9])/iu';
 
         return preg_match($pattern, $haystack) === 1;
     }

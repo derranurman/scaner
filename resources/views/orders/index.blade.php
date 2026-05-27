@@ -33,10 +33,40 @@
             </div>
         </form>
 
+        {{-- Form khusus untuk bulk delete. Ditaruh di luar <table> supaya
+             tidak bertabrakan dengan form-form inline (host_live, platform,
+             status, dll.) yang ada di tiap baris. Checkbox di tabel
+             "tergabung" ke form ini lewat atribut form="bulk-delete-form". --}}
+        <form id="bulk-delete-form"
+              method="POST"
+              action="{{ route('orders.bulk_destroy', request()->query()) }}"
+              onsubmit="return confirmBulkDelete(this);"
+              class="mb-3">
+            @csrf
+            @method('DELETE')
+            <div class="flex items-center gap-2 flex-wrap">
+                <button type="submit"
+                        id="bulk-delete-btn"
+                        class="px-3 py-1.5 rounded text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        disabled>
+                    🗑 Hapus Terpilih (<span id="bulk-delete-count">0</span>)
+                </button>
+                <span class="text-xs text-gray-500">
+                    Centang baris yang ingin dihapus. Pesanan berstatus
+                    <span class="font-semibold">packed</span> akan dilewati otomatis.
+                </span>
+            </div>
+        </form>
+
         <div class="overflow-x-auto">
             <table class="text-xs whitespace-nowrap border-collapse">
                 <thead class="text-left uppercase text-gray-500 border-b bg-gray-50">
                     <tr>
+                        <th class="px-2 py-2">
+                            <input type="checkbox" id="bulk-select-all"
+                                   title="Pilih semua di halaman ini"
+                                   class="rounded border-gray-300">
+                        </th>
                         <th class="px-2 py-2">No</th>
                         <th class="px-2 py-2">Resi</th>
                         <th class="px-2 py-2">Host Live</th>
@@ -75,7 +105,7 @@
                 <tbody class="divide-y">
                     <?php if ($orders->isEmpty()): ?>
                         <tr>
-                            <td colspan="33" class="py-6 text-center text-gray-500">
+                            <td colspan="34" class="py-6 text-center text-gray-500">
                                 Belum ada pesanan.
                                 <a href="{{ route('orders.import.pdf.show') }}" class="text-indigo-600 hover:underline">Import PDF &rarr;</a>
                                 <span class="text-gray-400">·</span>
@@ -120,6 +150,16 @@
                                 $marginLiveClass = $m['margin_live'] >= 0 ? 'text-green-600' : 'text-red-600';
                             ?>
                             <tr class="hover:bg-gray-50">
+                                <td class="px-2 py-2">
+                                    <input type="checkbox"
+                                           form="bulk-delete-form"
+                                           name="ids[]"
+                                           value="{{ $order->id }}"
+                                           class="bulk-select-row rounded border-gray-300"
+                                           data-status="{{ $order->status }}"
+                                           data-resi="{{ $order->resi_number }}"
+                                           @if ($order->status === 'packed') disabled title="Pesanan sudah di-packing, tidak bisa dihapus" @endif>
+                                </td>
                                 <td class="px-2 py-2">{{ $no }}</td>
 
                                 <td class="px-2 py-2 font-mono">
@@ -257,4 +297,53 @@
 
         <div class="mt-4">{{ $orders->links() }}</div>
     </div>
+
+    {{-- Behaviour untuk bulk delete: select-all, counter, konfirmasi. --}}
+    <script>
+        (function () {
+            const form = document.getElementById('bulk-delete-form');
+            const selectAll = document.getElementById('bulk-select-all');
+            const btn = document.getElementById('bulk-delete-btn');
+            const counter = document.getElementById('bulk-delete-count');
+            if (!form || !btn || !counter) return;
+
+            const rowCheckboxes = () => Array.from(document.querySelectorAll('.bulk-select-row:not(:disabled)'));
+
+            function refresh() {
+                const checked = rowCheckboxes().filter(c => c.checked);
+                counter.textContent = checked.length;
+                btn.disabled = checked.length === 0;
+
+                if (selectAll) {
+                    const all = rowCheckboxes();
+                    selectAll.checked = all.length > 0 && checked.length === all.length;
+                    selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+                }
+            }
+
+            if (selectAll) {
+                selectAll.addEventListener('change', function () {
+                    rowCheckboxes().forEach(c => { c.checked = selectAll.checked; });
+                    refresh();
+                });
+            }
+
+            document.addEventListener('change', function (e) {
+                if (e.target && e.target.classList && e.target.classList.contains('bulk-select-row')) {
+                    refresh();
+                }
+            });
+
+            window.confirmBulkDelete = function (formEl) {
+                const checked = rowCheckboxes().filter(c => c.checked);
+                if (checked.length === 0) {
+                    alert('Pilih minimal satu pesanan untuk dihapus.');
+                    return false;
+                }
+                return confirm('Hapus ' + checked.length + ' pesanan terpilih? Tindakan ini tidak bisa dibatalkan.');
+            };
+
+            refresh();
+        })();
+    </script>
 @endsection
