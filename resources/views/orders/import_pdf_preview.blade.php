@@ -270,6 +270,17 @@
                                                         @click="$dispatch('open-mapping', { keyword: $el.dataset.keyword, description: $el.dataset.description })">
                                                     Atur Mapping
                                                 </button>
+                                            <?php elseif ($source === 'combo' && ! empty($item['combo_mapping_id'])): ?>
+                                                {{-- Tombol "Edit Mapping" untuk item yang sudah
+                                                     ke-resolve via combo. Modal yang sama dipakai,
+                                                     tapi pre-loaded dengan keyword/items existing
+                                                     dari $mappingsById (di-injeksi di footer). --}}
+                                                <button type="button"
+                                                        class="text-xs text-indigo-700 hover:text-indigo-900 underline decoration-dotted"
+                                                        data-mapping-id="{{ $item['combo_mapping_id'] }}"
+                                                        @click="$dispatch('open-mapping', { mapping_id: Number($el.dataset.mappingId) })">
+                                                    Edit Mapping
+                                                </button>
                                             <?php endif; ?>
                                         </li>
                                     <?php endforeach; ?>
@@ -310,9 +321,10 @@
              @click.outside="close()">
             <form method="POST" :action="actionUrl" class="p-5 space-y-4" @submit="validateSubmit($event)">
                 @csrf
+                <input type="hidden" name="mapping_id" :value="mappingId ?? ''">
                 <div class="flex items-start justify-between gap-3">
                     <div>
-                        <h2 class="text-lg font-bold">Atur Mapping</h2>
+                        <h2 class="text-lg font-bold" x-text="mappingId ? 'Edit Mapping' : 'Atur Mapping'"></h2>
                         <p class="text-xs text-gray-500">
                             Setelah disimpan, mapping akan langsung diterapkan ke pratinjau ini.
                             Tidak perlu upload PDF resi lagi.
@@ -386,7 +398,8 @@
 
                 <div class="flex justify-end gap-2 pt-3 border-t">
                     <button type="button" class="btn-secondary" @click="close()">Batal</button>
-                    <button type="submit" class="btn-primary">Simpan &amp; Terapkan</button>
+                    <button type="submit" class="btn-primary"
+                            x-text="mappingId ? 'Update & Terapkan' : 'Simpan & Terapkan'"></button>
                 </div>
             </form>
         </div>
@@ -404,6 +417,10 @@
             return {
                 visible: false,
                 actionUrl: @json(route('orders.import.pdf.quick_mapping', $draft)),
+                // ID mapping yang sedang di-edit. null = mode CREATE,
+                // angka = mode UPDATE. Dikirim sebagai hidden input
+                // 'mapping_id' di form.
+                mappingId: null,
                 keyword: '',
                 description: '',
                 // Daftar semua varian untuk combobox (cari + pilih manual).
@@ -413,11 +430,40 @@
                     'id'    => $v->id,
                     'label' => trim(($v->product?->name ?? '').' — '.$v->name).' ('.$v->sku.')',
                 ])->values()),
+                // Map combo_mapping_id → { id, keyword, description, items[] }
+                // untuk mapping yang sedang dipakai oleh draft ini. Dipakai
+                // mode EDIT supaya modal bisa pre-fill tanpa fetch tambahan.
+                mappingsById: @json($mappingsById ?? new \stdClass()),
                 items: [{ variant_id: '', quantity: 1, search: '', open: false }],
                 open(data) {
-                    this.keyword = (data && data.keyword) || '';
-                    this.description = (data && data.description) || '';
-                    this.items = [{ variant_id: '', quantity: 1, search: '', open: false }];
+                    const mid = data && data.mapping_id ? Number(data.mapping_id) : null;
+                    const m = mid ? this.mappingsById[mid] : null;
+
+                    if (m) {
+                        // Mode EDIT: prefill dari mapping existing.
+                        this.mappingId = mid;
+                        this.keyword = m.keyword || '';
+                        this.description = m.description || '';
+                        this.items = (m.items || []).map(it => {
+                            const v = this.variantsList.find(x => Number(x.id) === Number(it.variant_id));
+                            return {
+                                variant_id: it.variant_id,
+                                quantity: it.quantity,
+                                search: v ? v.label : '',
+                                open: false,
+                            };
+                        });
+                        if (this.items.length === 0) {
+                            this.items = [{ variant_id: '', quantity: 1, search: '', open: false }];
+                        }
+                    } else {
+                        // Mode CREATE: data dari tombol "Atur Mapping" (default
+                        // keyword + description, items kosong).
+                        this.mappingId = null;
+                        this.keyword = (data && data.keyword) || '';
+                        this.description = (data && data.description) || '';
+                        this.items = [{ variant_id: '', quantity: 1, search: '', open: false }];
+                    }
                     this.visible = true;
                 },
                 close() {
