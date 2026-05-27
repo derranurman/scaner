@@ -12,6 +12,7 @@ use App\Services\TiktokLabelParser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class PdfImportController extends Controller
@@ -110,7 +111,38 @@ class PdfImportController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('orders.import_pdf_preview', compact('draft', 'variants'));
+        // Kumpulkan semua combo_mapping_id yang muncul di parsed_orders, lalu
+        // load datanya supaya tombol "Edit Mapping" di pratinjau bisa
+        // pre-fill modal tanpa fetch tambahan.
+        $mappingIds = [];
+        foreach ($draft->parsed_orders ?? [] as $entry) {
+            foreach ($entry['items'] ?? [] as $item) {
+                if (! empty($item['combo_mapping_id'])) {
+                    $mappingIds[] = (int) $item['combo_mapping_id'];
+                }
+            }
+        }
+        $mappingIds = array_values(array_unique($mappingIds));
+
+        $mappingsById = [];
+        if (! empty($mappingIds)) {
+            ComboMapping::with('items')
+                ->whereIn('id', $mappingIds)
+                ->get()
+                ->each(function (ComboMapping $m) use (&$mappingsById) {
+                    $mappingsById[$m->id] = [
+                        'id' => $m->id,
+                        'keyword' => $m->keyword,
+                        'description' => $m->description,
+                        'items' => $m->items->map(fn ($it) => [
+                            'variant_id' => (int) $it->variant_id,
+                            'quantity' => (int) $it->quantity,
+                        ])->values(),
+                    ];
+                });
+        }
+
+        return view('orders.import_pdf_preview', compact('draft', 'variants', 'mappingsById'));
     }
 
     /**
@@ -128,15 +160,28 @@ class PdfImportController extends Controller
     }
 
     /**
-     * Buat combo mapping baru dari layar pratinjau LALU langsung re-resolve
-     * draft, supaya item yang tadinya "perlu mapping" otomatis ter-mapping.
+     * Buat ATAU update combo mapping dari layar pratinjau LALU langsung
+     * re-resolve draft, supaya pratinjau langsung menampilkan hasil terbaru.
+     *
+     * - mapping_id kosong → CREATE
+     * - mapping_id terisi  → UPDATE (keyword/description di-overwrite, items
+     *                        diganti total)
      */
     public function quickMapping(Request $request, PdfParseDraft $draft): RedirectResponse
     {
         abort_if($draft->status !== PdfParseDraft::STATUS_DRAFT, 404);
 
+        $mappingIdInput = $request->input('mapping_id');
+        $mappingId = $mappingIdInput !== null && $mappingIdInput !== ''
+            ? (int) $mappingIdInput
+            : null;
+
         $request->validate([
-            'keyword' => ['required', 'string', 'min:6', 'max:150', 'unique:combo_mappings,keyword'],
+            'mapping_id' => ['nullable', 'integer', 'exists:combo_mappings,id'],
+            'keyword' => [
+                'required', 'string', 'min:6', 'max:150',
+                Rule::unique('combo_mappings', 'keyword')->ignore($mappingId),
+            ],
             'description' => ['nullable', 'string', 'max:255'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.variant_id' => ['required', 'integer', 'exists:variants,id'],
@@ -145,11 +190,22 @@ class PdfImportController extends Controller
             'keyword.min' => 'Keyword minimal 6 karakter. Pakai nama produk yang spesifik (jangan cuma "Default" / nama warna), supaya tidak nyangkut ke order lain.',
         ]);
 
-        DB::transaction(function () use ($request) {
-            $mapping = ComboMapping::create([
-                'keyword' => $request->input('keyword'),
-                'description' => $request->input('description'),
-            ]);
+        DB::transaction(function () use ($request, $mappingId) {
+            if ($mappingId) {
+                $mapping = ComboMapping::findOrFail($mappingId);
+                $mapping->update([
+                    'keyword' => $request->input('keyword'),
+                    'description' => $request->input('description'),
+                ]);
+                // Replace-all: lebih simpel & konsisten dengan controller
+                // ComboMappingController::update().
+                $mapping->items()->delete();
+            } else {
+                $mapping = ComboMapping::create([
+                    'keyword' => $request->input('keyword'),
+                    'description' => $request->input('description'),
+                ]);
+            }
 
             foreach ((array) $request->input('items', []) as $it) {
                 if (empty($it['variant_id'])) {
@@ -164,8 +220,10 @@ class PdfImportController extends Controller
 
         $this->reresolveDraft($draft);
 
+        $verb = $mappingId ? 'diupdate' : 'dibuat';
+
         return redirect()->route('orders.import.pdf.preview', $draft)
-            ->with('success', 'Mapping "'.$request->input('keyword').'" dibuat & langsung diterapkan ke pratinjau.');
+            ->with('success', 'Mapping "'.$request->input('keyword').'" '.$verb.' & langsung diterapkan ke pratinjau.');
     }
 
     /**

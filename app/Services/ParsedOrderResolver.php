@@ -190,6 +190,10 @@ class ParsedOrderResolver
                     'quantity' => $ci->quantity * $orderQty,
                     'source' => 'combo',
                     'matched_keyword' => $combo->keyword,
+                    // ID combo mapping yang men-trigger item ini, dipakai
+                    // tombol "Edit Mapping" di pratinjau supaya modal bisa
+                    // pre-fill keyword/items dari mapping yang persis ini.
+                    'combo_mapping_id' => $combo->id,
                 ];
             }
         }
@@ -227,6 +231,7 @@ class ParsedOrderResolver
                             'quantity' => $ci->quantity * $orderQty,
                             'source' => 'combo',
                             'matched_keyword' => $noteCombo->keyword.' (Seller Note)',
+                            'combo_mapping_id' => $noteCombo->id,
                         ];
                     }
 
