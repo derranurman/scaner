@@ -456,7 +456,12 @@ class ParsedOrderResolver
      * dengan "racing" atau "semi merah-merahan" dst:
      *   - Nama varian exact (word-boundary) di label: 10 poin
      *   - Token varian (split by space/slash/dash) ketemu word-boundary: 5 poin
+     *     (token 1-karakter ikut dihitung supaya varian "Biru 2" bisa beat
+     *     "Biru" untuk label "Biru 2".)
      *   - Synonym warna (Black↔Hitam) ketemu word-boundary: 10 poin
+     *
+     * Tie-break: skor sama → varian dengan NAMA LEBIH PANJANG menang
+     * (lebih spesifik). Cegah label "Biru 2" salah pilih varian "Biru".
      *
      * SKU varian TIDAK dihitung di sini — ada strategi SKU match terpisah di
      * resolver. Ini supaya SKU yang kebetulan punya token umum ("R14") tidak
@@ -486,6 +491,7 @@ class ParsedOrderResolver
 
         $best = null;
         $bestScore = 0;
+        $bestNameLen = 0;
         $bestReason = '';
 
         foreach ($variants as $v) {
@@ -504,10 +510,13 @@ class ParsedOrderResolver
             }
 
             // 2. Tiap token nama varian (word-boundary).
+            //    Token 1-karakter (mis. "2" pada varian "Biru 2") tetap
+            //    dihitung supaya varian "Biru 2" punya skor lebih tinggi
+            //    dari "Biru" saat label-nya berisi "Biru 2".
             $tokens = preg_split('/[\s,\/\-_]+/u', mb_strtolower($vname)) ?: [];
             foreach ($tokens as $token) {
                 $token = trim($token);
-                if (mb_strlen($token) < 2) {
+                if ($token === '') {
                     continue;
                 }
                 if ($this->hasWord($labelLower, $token)) {
@@ -524,9 +533,19 @@ class ParsedOrderResolver
                 }
             }
 
-            if ($score > $bestScore) {
+            // Tie-break: kalau skor sama, varian dengan nama lebih PANJANG
+            // menang (lebih spesifik). Tanpa ini, urutan iterasi koleksi
+            // (yang biasanya by id) menentukan pemenang — bug nyata: SKU
+            // label "Biru 2" memilih varian "Biru" karena "Biru" lebih dulu
+            // di koleksi dan kedua varian ber-skor sama 15 poin.
+            $vlen = mb_strlen($vname);
+            $isBetter = $score > $bestScore
+                || ($score === $bestScore && $score > 0 && $vlen > $bestNameLen);
+
+            if ($isBetter) {
                 $best = $v;
                 $bestScore = $score;
+                $bestNameLen = $vlen;
                 $bestReason = $reasonParts ? implode(', ', array_unique($reasonParts)) : '';
             }
         }
