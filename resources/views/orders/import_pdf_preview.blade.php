@@ -308,7 +308,7 @@
          style="display: none;">
         <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
              @click.outside="close()">
-            <form method="POST" :action="actionUrl" class="p-5 space-y-4">
+            <form method="POST" :action="actionUrl" class="p-5 space-y-4" @submit="validateSubmit($event)">
                 @csrf
                 <div class="flex items-start justify-between gap-3">
                     <div>
@@ -341,13 +341,39 @@
                     <label class="label">Pecah menjadi varian</label>
                     <div class="space-y-2">
                         <template x-for="(item, i) in items" :key="i">
-                            <div class="flex gap-2 items-center">
-                                <select :name="'items[' + i + '][variant_id]'" x-model="item.variant_id" required class="input flex-1">
-                                    <option value="">— pilih varian —</option>
-                                    @foreach ($variants as $v)
-                                        <option value="{{ $v->id }}">{{ $v->product?->name }} — {{ $v->name }} ({{ $v->sku }})</option>
-                                    @endforeach
-                                </select>
+                            <div class="flex gap-2 items-start">
+                                <div class="relative flex-1"
+                                     @click.outside="item.open = false"
+                                     @keydown.escape.stop="item.open = false">
+                                    <input type="text"
+                                           class="input w-full"
+                                           x-model="item.search"
+                                           @focus="item.open = true"
+                                           @input="item.open = true; item.variant_id = ''"
+                                           @click="item.open = true"
+                                           placeholder="Ketik nama / SKU varian, atau klik untuk pilih"
+                                           autocomplete="off">
+                                    <input type="hidden"
+                                           :name="'items[' + i + '][variant_id]'"
+                                           :value="item.variant_id">
+                                    <div x-show="item.open"
+                                         x-cloak
+                                         x-transition.opacity
+                                         class="absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-md shadow-lg"
+                                         style="display: none;">
+                                        <template x-for="v in filteredVariants(item.search)" :key="v.id">
+                                            <button type="button"
+                                                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-indigo-50"
+                                                    :class="{ 'bg-indigo-50 font-medium': String(item.variant_id) === String(v.id) }"
+                                                    @click="pickVariant(item, v)"
+                                                    x-text="v.label"></button>
+                                        </template>
+                                        <div x-show="filteredVariants(item.search).length === 0"
+                                             class="px-3 py-2 text-xs text-gray-400">
+                                            Tidak ada varian cocok.
+                                        </div>
+                                    </div>
+                                </div>
                                 <input type="number" min="1" :name="'items[' + i + '][quantity]'"
                                        x-model.number="item.quantity" required
                                        class="input w-20 text-center">
@@ -380,18 +406,61 @@
                 actionUrl: @json(route('orders.import.pdf.quick_mapping', $draft)),
                 keyword: '',
                 description: '',
-                items: [{ variant_id: '', quantity: 1 }],
+                // Daftar semua varian untuk combobox (cari + pilih manual).
+                // Disuntik sekali di awal supaya tidak ada DOM <option> raksasa
+                // berulang per row dan filter bisa dijalankan di client.
+                variantsList: @json($variants->map(fn ($v) => [
+                    'id'    => $v->id,
+                    'label' => trim(($v->product?->name ?? '').' — '.$v->name).' ('.$v->sku.')',
+                ])->values()),
+                items: [{ variant_id: '', quantity: 1, search: '', open: false }],
                 open(data) {
                     this.keyword = (data && data.keyword) || '';
                     this.description = (data && data.description) || '';
-                    this.items = [{ variant_id: '', quantity: 1 }];
+                    this.items = [{ variant_id: '', quantity: 1, search: '', open: false }];
                     this.visible = true;
                 },
                 close() {
                     this.visible = false;
                 },
-                add() { this.items.push({ variant_id: '', quantity: 1 }); },
-                remove(i) { this.items.splice(i, 1); },
+                add() {
+                    this.items.push({ variant_id: '', quantity: 1, search: '', open: false });
+                },
+                remove(i) {
+                    this.items.splice(i, 1);
+                },
+                // Cari case-insensitive di label gabungan (produk + varian + SKU).
+                // Dibatasi 100 hasil supaya rendering tetap ringan walaupun ada
+                // ribuan varian.
+                filteredVariants(q) {
+                    const s = (q || '').toString().trim().toLowerCase();
+                    const list = this.variantsList || [];
+                    if (!s) {
+                        return list.slice(0, 100);
+                    }
+                    const out = [];
+                    for (let i = 0; i < list.length && out.length < 100; i++) {
+                        if (list[i].label.toLowerCase().includes(s)) {
+                            out.push(list[i]);
+                        }
+                    }
+                    return out;
+                },
+                pickVariant(item, v) {
+                    item.variant_id = v.id;
+                    item.search = v.label;
+                    item.open = false;
+                },
+                validateSubmit(e) {
+                    // Hidden input variant_id tidak ikut HTML5 required-validation,
+                    // jadi kita jaga di sini biar user dapat feedback langsung.
+                    const missing = this.items.findIndex(it => !it.variant_id);
+                    if (missing !== -1) {
+                        e.preventDefault();
+                        this.items[missing].open = true;
+                        alert('Pilih varian dulu untuk semua baris sebelum menyimpan.');
+                    }
+                },
             };
         }
     </script>
