@@ -282,6 +282,42 @@ class OrderController extends Controller
     }
 
     /**
+     * Hapus banyak pesanan sekaligus berdasarkan ID yang dicentang
+     * di halaman daftar Pesanan. Pesanan yang sudah di-packing
+     * akan dilewati (tidak ikut dihapus) untuk menjaga integritas
+     * data laporan packing.
+     */
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'exists:orders,id'],
+        ]);
+
+        $orders = Order::whereIn('id', $data['ids'])->get();
+
+        $deleted = 0;
+        $skipped = 0;
+        foreach ($orders as $order) {
+            if ($order->status === Order::STATUS_PACKED) {
+                $skipped++;
+                continue;
+            }
+            $order->delete();
+            $deleted++;
+        }
+
+        $msg = "{$deleted} pesanan berhasil dihapus.";
+        if ($skipped > 0) {
+            $msg .= " {$skipped} pesanan dilewati karena sudah di-packing.";
+        }
+
+        return redirect()
+            ->route('orders.index', $request->query())
+            ->with($deleted > 0 ? 'success' : 'error', $msg);
+    }
+
+    /**
      * Update status pesanan secara inline (tanpa hapus).
      */
     public function updateStatus(Request $request, Order $order): RedirectResponse
