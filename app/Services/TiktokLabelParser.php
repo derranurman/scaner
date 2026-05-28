@@ -527,7 +527,15 @@ class TiktokLabelParser
             //     Pengirim regex bisa nyangkut text bukan nama (mis. "Penjual
             //     tidak perlu bayar ongkir ke Kurir", "CASHLESS", etc.) ketika
             //     PDF parser merge kolom secara salah.
-            $senderNoiseRegex = '/Penjual|bayar\s*ongkir|tidak\s*perlu|^CASHLESS$|^Kurir$|Kurir\s*CASHLESS|tidak\s*ada\s*biaya/i';
+            //
+            //     Untuk SPX layout BARU, "Pengirim" adalah column header dan
+            //     value-nya sering tergabung dengan field berikutnya
+            //     ("No.Pesanan: XXX", "Resi", "Order ID", "Product Name",
+            //     "SKU", "Seller Note") karena PDF text extractor merge
+            //     vertical-adjacent strings. Filter ini menolak hasil tsb
+            //     sehingga heuristik (d) bisa fire untuk swap buyer→sender
+            //     (sama seperti penanganan kasus Anteraja Mama Fahri).
+            $senderNoiseRegex = '/Penjual|bayar\s*ongkir|tidak\s*perlu|^CASHLESS$|^Kurir$|Kurir\s*CASHLESS|tidak\s*ada\s*biaya|^No\.?\s*Pesanan\b|^Resi\b|^Order\s*ID\b|^Product\s*Name\b|^SKU\b|^Seller\s*Note\b|^Berat\b|^Batas\s*Kirim\b/i';
             if ($senderName !== null && preg_match($senderNoiseRegex, $senderName)) {
                 $senderName = null;
             }
@@ -596,18 +604,17 @@ class TiktokLabelParser
 
             // (d) Heuristik: buyer_name terlihat seperti nama toko/bisnis tapi
             //     sender_name kosong → kemungkinan PDF parser salah assign kolom.
-            //     Pada label SPX Shopee LAMA (layout 2-kolom), kolom kanan
-            //     (Pengirim) berisi nama toko dan nomor HP format internasional
-            //     (62...). Kalau buyer_phone adalah format internasional 13 digit
-            //     & buyer_name "shop-like", swap ke sender.
+            //     Pada label SPX Shopee (baik layout LAMA 2-kolom maupun layout
+            //     BARU dengan English headers), kolom Pengirim berisi nama toko
+            //     dan nomor HP format internasional (62...). Kalau buyer_phone
+            //     adalah format internasional 13 digit & buyer_name "shop-like",
+            //     swap ke sender.
             //
-            //     PENTING: heuristik ini HANYA fire kalau ada bukti label
-            //     punya baris "Pengirim:" beneran (key-value, bukan section
-            //     header). Pada layout SPX BARU (English headers), "Pengirim"
-            //     muncul sebagai section header tanpa colon — di situ tidak
-            //     ada info pengirim sama sekali, jadi tidak boleh di-swap.
-            $hasPengirimKv = preg_match('/^Pengirim\s*[:\-]/im', $fullText) === 1;
-            if ($senderName === null && $buyerName !== null && $hasPengirimKv) {
+            //     Catatan: untuk SPX baru, sender_name yang "ter-extract" dari
+            //     baris "Pengirim: No.Pesanan: ..." sudah di-null-kan di (e)
+            //     karena cocok dengan template-label noise regex. Jadi
+            //     guard `$senderName === null` di sini tetap aman.
+            if ($senderName === null && $buyerName !== null) {
                 $shopKeywords = '/\b(Shop|Store|Autoshop|Auto[- ]?shop|Toko|Official|Online|Mart|Shopee|Tokped|Tiktok|Olshop)\b/i';
                 $isShopLike = preg_match($shopKeywords, $buyerName) === 1;
                 $isIntlPhone = $buyerPhone !== null
@@ -650,6 +657,32 @@ class TiktokLabelParser
                 if ($foundIdx !== null) {
                     $buyerName = trim($addressParts[$foundIdx]);
                     array_splice($addressParts, $foundIdx, 1);
+                }
+            }
+
+            // (f2) Fallback: kalau (f) tidak ketemu standalone person-name part,
+            //      coba split TOKEN PERTAMA dari addressParts[0]. Kasus typical
+            //      SPX: address ditulis sebagai satu line "Ruslan, Jalan Trans
+            //      Sulawesi, Dusun ..., KAB. LUWU UTARA, ..." — nama orang
+            //      ke-prefix di address tapi tidak di line tersendiri.
+            //
+            //      Aman karena hanya fire kalau: (a) buyer masih null, (b)
+            //      first part diawali oleh kata berhuruf kapital pendek (1-3
+            //      kata) yang BUKAN address keyword, (c) ada koma sebagai
+            //      pemisah dari address sungguhan.
+            if ($buyerName === null && ! empty($addressParts)) {
+                $first = trim((string) $addressParts[0]);
+                if ($first !== '' && preg_match('/^([A-Z][\p{L}\.\-\']{1,20}(?:\s+[A-Z][\p{L}\.\-\']{1,20}){0,2})\s*,\s*(.+)$/u', $first, $sm)) {
+                    $candName = trim($sm[1]);
+                    $rest = trim($sm[2]);
+                    $addressKeywordsHead = '/\b(Jl\.?|Jalan|RT|RW|Gang|Gg\.?|Komplek|Perumahan|Blok|No\.?|Kel\.?|Kec\.?|Kota|Kabupaten|Dusun|Desa|Kelurahan|Kecamatan)\b/i';
+                    $isCapsOnly = $candName === mb_strtoupper($candName);
+                    $isNoise = preg_match($senderNoiseRegex, $candName) === 1;
+                    $hasAddrKeyword = preg_match($addressKeywordsHead, $candName) === 1;
+                    if (! $isCapsOnly && ! $isNoise && ! $hasAddrKeyword && mb_strlen($candName) >= 3) {
+                        $buyerName = $candName;
+                        $addressParts[0] = $rest;
+                    }
                 }
             }
 
