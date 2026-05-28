@@ -24,7 +24,18 @@
                 <tbody class="divide-y">
                     @foreach ($users as $u)
                         <tr>
-                            <td class="py-3 font-medium">{{ $u->name }}</td>
+                            <td class="py-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="h-9 w-9 rounded-full border border-gray-200 bg-indigo-50 grid place-items-center overflow-hidden shrink-0">
+                                        @if ($u->imageUrl())
+                                            <img src="{{ $u->imageUrl() }}" alt="Foto {{ $u->name }}" class="h-full w-full object-cover">
+                                        @else
+                                            <span class="text-sm font-semibold text-indigo-600">{{ $u->initials() }}</span>
+                                        @endif
+                                    </div>
+                                    <span class="font-medium">{{ $u->name }}</span>
+                                </div>
+                            </td>
                             <td class="py-3">{{ $u->email }}</td>
                             <td class="py-3">
                                 <span class="badge {{ $u->role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-700' }} capitalize">{{ $u->role }}</span>

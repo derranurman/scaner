@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
@@ -31,10 +32,17 @@ class UserController extends Controller
             'role' => ['required', 'in:admin,packing'],
             'is_active' => ['nullable', 'boolean'],
             'password' => ['required', Password::min(6)],
+            'image' => ['nullable', 'image', 'max:2048'],
         ]);
 
         $data['is_active'] = $request->boolean('is_active', true);
         $data['password'] = Hash::make($data['password']);
+
+        if ($request->hasFile('image')) {
+            $data['image'] = $request->file('image')->store('avatars', 'public');
+        } else {
+            unset($data['image']);
+        }
 
         User::create($data);
 
@@ -54,6 +62,8 @@ class UserController extends Controller
             'role' => ['required', 'in:admin,packing'],
             'is_active' => ['nullable', 'boolean'],
             'password' => ['nullable', Password::min(6)],
+            'image' => ['nullable', 'image', 'max:2048'],
+            'remove_image' => ['nullable', 'boolean'],
         ]);
 
         $data['is_active'] = $request->boolean('is_active', false);
@@ -64,6 +74,28 @@ class UserController extends Controller
             unset($data['password']);
         }
 
+        // Hapus gambar lama jika user explicit minta remove ATAU upload baru.
+        $shouldRemove = $request->boolean('remove_image');
+        if ($shouldRemove && $user->image) {
+            Storage::disk('public')->delete($user->image);
+            $data['image'] = null;
+        }
+
+        if ($request->hasFile('image')) {
+            if ($user->image) {
+                Storage::disk('public')->delete($user->image);
+            }
+            $data['image'] = $request->file('image')->store('avatars', 'public');
+        } else {
+            // Jangan timpa kolom image kalau tidak ada file upload baru
+            // dan tidak request remove (kecuali sudah di-set null di atas).
+            if (! $shouldRemove) {
+                unset($data['image']);
+            }
+        }
+
+        unset($data['remove_image']);
+
         $user->update($data);
 
         return redirect()->route('users.index')->with('success', 'User diperbarui.');
@@ -73,6 +105,10 @@ class UserController extends Controller
     {
         if ($user->id === $request->user()->id) {
             return back()->with('error', 'Tidak bisa menghapus akun sendiri.');
+        }
+
+        if ($user->image) {
+            Storage::disk('public')->delete($user->image);
         }
 
         $user->delete();

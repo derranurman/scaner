@@ -72,10 +72,39 @@
 
             <div class="hidden md:flex items-center gap-3">
                 @auth
-                    <div class="text-right text-sm leading-tight">
-                        <div class="font-medium">{{ $user->name }}</div>
-                        <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
-                    </div>
+                    {{-- Avatar + nama: avatar di-link ke halaman edit user
+                         sendiri kalau admin (bisa edit profil sendiri),
+                         kalau packing user cuma display saja. --}}
+                    @if ($user->isAdmin())
+                        <a href="{{ route('users.edit', $user) }}" class="flex items-center gap-3 hover:bg-gray-50 rounded-md px-2 py-1 -mr-2"
+                           title="Edit profil saya">
+                            <div class="h-9 w-9 rounded-full border border-gray-200 bg-indigo-50 grid place-items-center overflow-hidden shrink-0">
+                                @if ($user->imageUrl())
+                                    <img src="{{ $user->imageUrl() }}" alt="Foto {{ $user->name }}" class="h-full w-full object-cover">
+                                @else
+                                    <span class="text-sm font-semibold text-indigo-600">{{ $user->initials() }}</span>
+                                @endif
+                            </div>
+                            <div class="text-right text-sm leading-tight">
+                                <div class="font-medium">{{ $user->name }}</div>
+                                <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
+                            </div>
+                        </a>
+                    @else
+                        <div class="flex items-center gap-3">
+                            <div class="h-9 w-9 rounded-full border border-gray-200 bg-indigo-50 grid place-items-center overflow-hidden shrink-0">
+                                @if ($user->imageUrl())
+                                    <img src="{{ $user->imageUrl() }}" alt="Foto {{ $user->name }}" class="h-full w-full object-cover">
+                                @else
+                                    <span class="text-sm font-semibold text-indigo-600">{{ $user->initials() }}</span>
+                                @endif
+                            </div>
+                            <div class="text-right text-sm leading-tight">
+                                <div class="font-medium">{{ $user->name }}</div>
+                                <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
+                            </div>
+                        </div>
+                    @endif
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
                         <button type="submit" class="btn-secondary">Logout</button>
@@ -123,10 +152,22 @@
             @endif
             @auth
                 <div class="pt-3 border-t mt-2 text-sm">
-                    <div class="px-3 pb-2">
-                        <div class="font-medium">{{ $user->name }}</div>
-                        <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
+                    <div class="px-3 pb-2 flex items-center gap-3">
+                        <div class="h-10 w-10 rounded-full border border-gray-200 bg-indigo-50 grid place-items-center overflow-hidden shrink-0">
+                            @if ($user->imageUrl())
+                                <img src="{{ $user->imageUrl() }}" alt="Foto {{ $user->name }}" class="h-full w-full object-cover">
+                            @else
+                                <span class="text-sm font-semibold text-indigo-600">{{ $user->initials() }}</span>
+                            @endif
+                        </div>
+                        <div class="flex-1">
+                            <div class="font-medium">{{ $user->name }}</div>
+                            <div class="text-xs text-gray-500 capitalize">{{ $user->role }}</div>
+                        </div>
                     </div>
+                    @if ($user->isAdmin())
+                        <a href="{{ route('users.edit', $user) }}" class="block px-3 py-2 text-sm text-indigo-700 hover:bg-gray-50">Edit Profil Saya</a>
+                    @endif
                     <form method="POST" action="{{ route('logout') }}" class="px-3">
                         @csrf
                         <button type="submit" class="btn-secondary w-full">Logout</button>
