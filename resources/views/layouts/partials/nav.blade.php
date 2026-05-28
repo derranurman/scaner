@@ -4,8 +4,14 @@
         <div class="flex h-16 justify-between">
             <div class="flex items-center gap-6">
                 <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                    <div class="h-8 w-8 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">S</div>
-                    <span class="font-semibold text-gray-900">Scaner Toko</span>
+                    @if ($brand->logoUrl())
+                        <div class="h-8 w-8 rounded-lg overflow-hidden">
+                            <img src="{{ $brand->logoUrl() }}" alt="Logo {{ $brand->app_name }}" class="h-full w-full object-cover">
+                        </div>
+                    @else
+                        <div class="h-8 w-8 rounded-lg bg-indigo-600 text-white grid place-items-center font-bold">{{ $brand->initial() }}</div>
+                    @endif
+                    <span class="font-semibold text-gray-900">{{ $brand->app_name }}</span>
                 </a>
 
                 <div class="hidden md:flex items-center gap-1">
@@ -63,6 +69,7 @@
                         <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
                         <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.packing*')">Laporan</x-nav-link>
                         <x-nav-link :href="route('users.index')" :active="request()->routeIs('users.*')">User</x-nav-link>
+                        <x-nav-link :href="route('settings.edit')" :active="request()->routeIs('settings.*')">Pengaturan</x-nav-link>
                     @elseif ($user?->isPacking())
                         <x-nav-link :href="route('scan.index')" :active="request()->routeIs('scan.*')">Scan</x-nav-link>
                         <x-nav-link :href="route('reports.packing')" :active="request()->routeIs('reports.packing*')">Laporan Packing</x-nav-link>
@@ -146,6 +153,7 @@
                 <x-responsive-nav-link :href="route('scan.index')">Scan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('reports.packing')">Laporan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('users.index')">User</x-responsive-nav-link>
+                <x-responsive-nav-link :href="route('settings.edit')">Pengaturan</x-responsive-nav-link>
             @elseif ($user?->isPacking())
                 <x-responsive-nav-link :href="route('scan.index')">Scan</x-responsive-nav-link>
                 <x-responsive-nav-link :href="route('reports.packing')">Laporan Packing</x-responsive-nav-link>
