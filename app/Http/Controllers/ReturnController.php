@@ -93,8 +93,13 @@ class ReturnController extends Controller
     /**
      * Tandai bahwa barang return SUDAH DITERIMA kembali oleh toko.
      * Otomatis menambah stok untuk setiap item, lalu set status jadi
-     * "selesai_bulan_kemarin". `returned_at` SENGAJA TIDAK DIHAPUS
-     * supaya pesanan tetap muncul di Laporan Return sebagai histori.
+     * "selesai_return". `returned_at` SENGAJA TIDAK DIHAPUS supaya
+     * pesanan tetap muncul di Laporan Return sebagai histori.
+     *
+     * Catatan: status "selesai_return" terpisah dari
+     * "selesai_bulan_kemarin" (untuk pesanan lintas bulan yang sudah
+     * tutup buku) supaya histori return bisa dibedakan dengan jelas
+     * dari pesanan biasa yang sudah selesai.
      */
     public function receiveItems(Request $request, Order $order): RedirectResponse
     {
@@ -128,7 +133,7 @@ class ReturnController extends Controller
         // Pindahkan status, TAPI biarkan returned_at agar tetap tercatat
         // di Laporan Return sebagai histori barang yang pernah di-return.
         $order->update([
-            'status' => Order::STATUS_SELESAI_BULAN_KEMARIN,
+            'status' => Order::STATUS_SELESAI_RETURN,
             'notes' => trim($order->notes . "\n[BARANG DITERIMA] " . now()->format('d/m/Y H:i') . " — {$totalRestocked} unit dikembalikan ke stok"),
         ]);
 

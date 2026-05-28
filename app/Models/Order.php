@@ -14,22 +14,25 @@ class Order extends Model
     public const STATUS_PENDING = 'pending';
     public const STATUS_PACKED = 'packed';
     public const STATUS_RETURN = 'return';
+    public const STATUS_SELESAI_RETURN = 'selesai_return';
     public const STATUS_SELESAI_BULAN_KEMARIN = 'selesai_bulan_kemarin';
 
-    /** Daftar 4 status yang valid. */
+    /** Daftar 5 status yang valid. */
     public const STATUSES = [
         self::STATUS_PENDING,
         self::STATUS_PACKED,
-        self::STATUS_SELESAI_BULAN_KEMARIN,
         self::STATUS_RETURN,
+        self::STATUS_SELESAI_RETURN,
+        self::STATUS_SELESAI_BULAN_KEMARIN,
     ];
 
     /** Label yang ditampilkan di UI. */
     public const STATUS_LABELS = [
         self::STATUS_PENDING => 'Pending',
         self::STATUS_PACKED => 'Packed',
-        self::STATUS_SELESAI_BULAN_KEMARIN => 'Selesai Bulan Kemarin',
         self::STATUS_RETURN => 'Return',
+        self::STATUS_SELESAI_RETURN => 'Selesai Return',
+        self::STATUS_SELESAI_BULAN_KEMARIN => 'Selesai Bulan Kemarin',
     ];
 
     protected $fillable = [

@@ -83,8 +83,9 @@
                                 <span class="badge
                                     {{ $order->status === 'pending' ? 'bg-amber-100 text-amber-700' : '' }}
                                     {{ $order->status === 'packed' ? 'bg-green-100 text-green-700' : '' }}
-                                    {{ $order->status === 'selesai_bulan_kemarin' ? 'bg-blue-100 text-blue-700' : '' }}
-                                    {{ $order->status === 'return' ? 'bg-red-100 text-red-700' : '' }}">
+                                    {{ $order->status === 'return' ? 'bg-red-100 text-red-700' : '' }}
+                                    {{ $order->status === 'selesai_return' ? 'bg-purple-100 text-purple-700' : '' }}
+                                    {{ $order->status === 'selesai_bulan_kemarin' ? 'bg-blue-100 text-blue-700' : '' }}">
                                     {{ \App\Models\Order::STATUS_LABELS[$order->status] ?? ucfirst($order->status) }}
                                 </span>
                             </td>

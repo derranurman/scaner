@@ -17,10 +17,12 @@
                         <span class="badge bg-amber-100 text-amber-700">Pending</span>
                     @elseif ($order->status === \App\Models\Order::STATUS_PACKED)
                         <span class="badge bg-green-100 text-green-700">Packed</span>
-                    @elseif ($order->status === \App\Models\Order::STATUS_SELESAI_BULAN_KEMARIN)
-                        <span class="badge bg-blue-100 text-blue-700">Selesai Bulan Kemarin</span>
                     @elseif ($order->status === \App\Models\Order::STATUS_RETURN)
                         <span class="badge bg-red-100 text-red-700">Return</span>
+                    @elseif ($order->status === \App\Models\Order::STATUS_SELESAI_RETURN)
+                        <span class="badge bg-purple-100 text-purple-700">Selesai Return</span>
+                    @elseif ($order->status === \App\Models\Order::STATUS_SELESAI_BULAN_KEMARIN)
+                        <span class="badge bg-blue-100 text-blue-700">Selesai Bulan Kemarin</span>
                     @else
                         <span class="badge bg-gray-100 text-gray-600">{{ ucfirst($order->status) }}</span>
                     @endif
