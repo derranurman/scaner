@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AppSettingController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\ComboMappingController;
 use App\Http\Controllers\DashboardController;
@@ -119,5 +120,9 @@ Route::middleware('auth')->group(function () {
 
         // Users
         Route::resource('users', UserController::class)->except(['show']);
+
+        // Pengaturan aplikasi (nama & logo branding) — singleton.
+        Route::get('settings', [AppSettingController::class, 'edit'])->name('settings.edit');
+        Route::put('settings', [AppSettingController::class, 'update'])->name('settings.update');
     });
 });

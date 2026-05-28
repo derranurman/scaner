@@ -3,14 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — {{ config('app.name') }}</title>
+    <title>Login — {{ $brand->app_name }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-gradient-to-br from-indigo-50 to-white grid place-items-center px-4">
     <div class="w-full max-w-md">
         <div class="text-center mb-6">
-            <div class="h-12 w-12 rounded-xl bg-indigo-600 text-white grid place-items-center font-bold text-xl mx-auto">S</div>
-            <h1 class="mt-3 text-2xl font-bold">Scaner Toko</h1>
+            @if ($brand->logoUrl())
+                <div class="h-12 w-12 rounded-xl overflow-hidden mx-auto">
+                    <img src="{{ $brand->logoUrl() }}" alt="Logo {{ $brand->app_name }}" class="h-full w-full object-cover">
+                </div>
+            @else
+                <div class="h-12 w-12 rounded-xl bg-indigo-600 text-white grid place-items-center font-bold text-xl mx-auto">{{ $brand->initial() }}</div>
+            @endif
+            <h1 class="mt-3 text-2xl font-bold">{{ $brand->app_name }}</h1>
             <p class="text-sm text-gray-500">Masuk untuk mengelola stok & scan resi</p>
         </div>
 
