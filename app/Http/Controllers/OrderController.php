@@ -319,6 +319,17 @@ class OrderController extends Controller
 
     /**
      * Update status pesanan secara inline (tanpa hapus).
+     *
+     * Side effect: ketika status berubah ke `return` atau `selesai_return`,
+     * `returned_at` di-auto-set ke `now()` jika masih null. Ini supaya
+     * pesanan yang di-set Return via dropdown inline (bukan via halaman
+     * Kelola Return → markReturn) tetap muncul di Laporan Return — yang
+     * memfilter berdasarkan `returned_at` per bulan.
+     *
+     * `returned_at` SENGAJA TIDAK di-clear ketika status pindah keluar
+     * dari grup return — supaya histori tidak hilang. Untuk benar-benar
+     * "membatalkan" return (clear `returned_at`), pakai endpoint
+     * undoReturn atau Hapus di Laporan Return.
      */
     public function updateStatus(Request $request, Order $order): RedirectResponse
     {
@@ -326,7 +337,16 @@ class OrderController extends Controller
             'status' => ['required', Rule::in(Order::STATUSES)],
         ]);
 
-        $order->update(['status' => $data['status']]);
+        $update = ['status' => $data['status']];
+        $isReturnGroup = in_array($data['status'], [
+            Order::STATUS_RETURN,
+            Order::STATUS_SELESAI_RETURN,
+        ], true);
+        if ($isReturnGroup && $order->returned_at === null) {
+            $update['returned_at'] = now();
+        }
+
+        $order->update($update);
 
         return back()->with('success', "Status pesanan {$order->resi_number} diubah menjadi {$data['status']}.");
     }

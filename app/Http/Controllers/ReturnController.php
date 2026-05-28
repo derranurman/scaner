@@ -132,8 +132,13 @@ class ReturnController extends Controller
 
         // Pindahkan status, TAPI biarkan returned_at agar tetap tercatat
         // di Laporan Return sebagai histori barang yang pernah di-return.
+        //
+        // Safety net: jika `returned_at` null (mis. order ini tadinya
+        // di-set status='return' via dropdown inline tanpa lewat markReturn),
+        // set sekarang supaya tetap muncul di Laporan Return.
         $order->update([
             'status' => Order::STATUS_SELESAI_RETURN,
+            'returned_at' => $order->returned_at ?? now(),
             'notes' => trim($order->notes . "\n[BARANG DITERIMA] " . now()->format('d/m/Y H:i') . " — {$totalRestocked} unit dikembalikan ke stok"),
         ]);
 
