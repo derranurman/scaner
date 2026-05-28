@@ -7,8 +7,9 @@
     $statusOptions = [
         \App\Models\Order::STATUS_PENDING => 'Pending',
         \App\Models\Order::STATUS_PACKED => 'Packed',
-        \App\Models\Order::STATUS_SELESAI_BULAN_KEMARIN => 'Selesai Bulan Kemarin',
         \App\Models\Order::STATUS_RETURN => 'Return',
+        \App\Models\Order::STATUS_SELESAI_RETURN => 'Selesai Return',
+        \App\Models\Order::STATUS_SELESAI_BULAN_KEMARIN => 'Selesai Bulan Kemarin',
     ];
 
     // Kelengkapan options: value => label

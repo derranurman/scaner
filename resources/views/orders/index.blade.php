@@ -23,8 +23,9 @@
                 <option value="">Semua status</option>
                 <option value="pending"               <?php if ($status === 'pending') echo 'selected'; ?>>Pending</option>
                 <option value="packed"                <?php if ($status === 'packed') echo 'selected'; ?>>Packed</option>
-                <option value="selesai_bulan_kemarin" <?php if ($status === 'selesai_bulan_kemarin') echo 'selected'; ?>>Selesai Bulan Kemarin</option>
                 <option value="return"                <?php if ($status === 'return') echo 'selected'; ?>>Return</option>
+                <option value="selesai_return"        <?php if ($status === 'selesai_return') echo 'selected'; ?>>Selesai Return</option>
+                <option value="selesai_bulan_kemarin" <?php if ($status === 'selesai_bulan_kemarin') echo 'selected'; ?>>Selesai Bulan Kemarin</option>
             </select>
             <input type="date" name="date" value="{{ $date }}" class="input">
             <div class="flex gap-2">
@@ -267,11 +268,13 @@
                                                     {{ $order->status === 'pending' ? 'bg-amber-100 text-amber-700 border-amber-300' : '' }}
                                                     {{ $order->status === 'packed' ? 'bg-green-100 text-green-700 border-green-300' : '' }}
                                                     {{ $order->status === 'return' ? 'bg-red-100 text-red-700 border-red-300' : '' }}
+                                                    {{ $order->status === 'selesai_return' ? 'bg-purple-100 text-purple-700 border-purple-300' : '' }}
                                                     {{ $order->status === 'selesai_bulan_kemarin' ? 'bg-blue-100 text-blue-700 border-blue-300' : '' }}">
                                             <option value="pending" {{ $order->status === 'pending' ? 'selected' : '' }}>Pending</option>
                                             <option value="packed" {{ $order->status === 'packed' ? 'selected' : '' }}>Packed</option>
-                                            <option value="selesai_bulan_kemarin" {{ $order->status === 'selesai_bulan_kemarin' ? 'selected' : '' }}>Selesai Bulan Kemarin</option>
                                             <option value="return" {{ $order->status === 'return' ? 'selected' : '' }}>Return</option>
+                                            <option value="selesai_return" {{ $order->status === 'selesai_return' ? 'selected' : '' }}>Selesai Return</option>
+                                            <option value="selesai_bulan_kemarin" {{ $order->status === 'selesai_bulan_kemarin' ? 'selected' : '' }}>Selesai Bulan Kemarin</option>
                                         </select>
                                     </form>
                                 </td>

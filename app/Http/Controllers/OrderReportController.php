@@ -44,6 +44,7 @@ class OrderReportController extends Controller
             'pending' => $orders->where('status', Order::STATUS_PENDING)->count(),
             'packed' => $orders->where('status', Order::STATUS_PACKED)->count(),
             'selesai_bulan_kemarin' => $orders->where('status', Order::STATUS_SELESAI_BULAN_KEMARIN)->count(),
+            'selesai_return' => $orders->where('status', Order::STATUS_SELESAI_RETURN)->count(),
             'return' => $orders->where('status', Order::STATUS_RETURN)->count(),
         ];
 
