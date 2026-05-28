@@ -250,14 +250,32 @@ class TiktokLabelParser
 
     /**
      * Deteksi marketplace:
-     *  - 'shopee'    → ada 'SPXID' / 'Shopee' / 'SPX'
+     *  - 'shopee'    → ada 'SPXID' / 'Shopee' / 'SPX' / 'Shop Express',
+     *                  ATAU keyword khas label Shopee: "No. Pesanan" /
+     *                  "Batas Kirim" (Shopee non-SPX, mis. Anteraja/JNE/SiCepat)
      *  - 'tokopedia' → ada watermark 'tokopedia' (tanpa indikator Shopee)
      *  - 'tiktok'    → default (juga dipakai untuk label TikTok Shop yang
      *                  dikirim via J&T Cargo karena layout tabel produk sama)
      */
     private function detectMarketplace(string $text): string
     {
+        // Shopee + SPX (paling kuat)
         if (preg_match('/\bSPXID\d+|\bShopee\b|\bSPX\b|Shop\s*Express/i', $text)) {
+            return 'shopee';
+        }
+
+        // Shopee non-SPX (Anteraja / JNE / SiCepat / dll). Ciri khas:
+        //   - "No. Pesanan: <kode>" — Shopee order ID label (TikTok pakai "Order Id",
+        //     Tokopedia pakai "No. Resi"/"Invoice")
+        //   - "Batas Kirim:" — Shopee delivery deadline (TikTok pakai "Ship")
+        //   - Header tabel "Nama Produk ... Variasi" — khas Shopee Indonesia
+        //     (TikTok pakai "Product Name ... Seller SKU")
+        $shopeeMarkers = 0;
+        if (preg_match('/No\.?\s*Pesanan\s*[:\-]/i', $text)) $shopeeMarkers++;
+        if (preg_match('/Batas\s*Kirim\s*[:\-]/i', $text)) $shopeeMarkers++;
+        if (preg_match('/Nama\s*Produk[\s\S]{0,30}Variasi/i', $text)) $shopeeMarkers++;
+        if (preg_match('/^Pesan\s*[:\(]/im', $text)) $shopeeMarkers++;
+        if ($shopeeMarkers >= 2) {
             return 'shopee';
         }
 
@@ -564,6 +582,33 @@ class TiktokLabelParser
             return array_key_first($counts);
         }
 
+        // Shopee non-SPX (Anteraja/JNE/SiCepat/dll): cari "No. Resi: <digits>"
+        // sebagai anchor utama, atau angka panjang (10-20 digit) yang paling
+        // sering muncul (biasanya tertulis di barcode header & sample dibawah).
+        if ($marketplace === 'shopee') {
+            // Format 1: explicit "No. Resi: 11003835228537"
+            if (preg_match('/No\.?\s*Resi\s*[:\-]\s*([A-Z0-9]{8,24})/i', $text, $rm)) {
+                return strtoupper(trim($rm[1]));
+            }
+
+            // Format 2: angka panjang yang paling sering muncul, dengan filter
+            // exclude Order ID Shopee (alfanumerik 13-15 char campur huruf).
+            if (preg_match_all('/\b(\d{10,20})\b/', $text, $matches)) {
+                $orderIds = [];
+                if (preg_match_all('/No\.?\s*Pesanan\s*[:\-]?\s*(\w{8,24})/i', $text, $oidMatches)) {
+                    $orderIds = array_map('strtoupper', $oidMatches[1]);
+                }
+                $candidates = array_diff($matches[1], $orderIds);
+
+                if (! empty($candidates)) {
+                    $counts = array_count_values($candidates);
+                    arsort($counts);
+
+                    return (string) array_key_first($counts);
+                }
+            }
+        }
+
         // TikTok/J&T Express: JX/JP + 10-16 digit
         if (preg_match_all('/\b(J[XP]\d{10,16})\b/i', $text, $matches)) {
             $counts = array_count_values(array_map('strtoupper', $matches[1]));
@@ -647,6 +692,20 @@ class TiktokLabelParser
     private function extractCourier(string $text, string $marketplace): string
     {
         if ($marketplace === 'shopee') {
+            // Shopee bisa pakai berbagai kurir. Deteksi dari teks:
+            if (preg_match('/\bAnteraja\b/i', $text)) {
+                return 'Anteraja';
+            }
+            if (preg_match('/\bSiCepat\b/i', $text)) {
+                return 'SiCepat';
+            }
+            if (preg_match('/\bJNE\b/i', $text)) {
+                return 'JNE';
+            }
+            if (preg_match('/J&T\s*Express|J\s*&\s*T/i', $text)) {
+                return 'JNT';
+            }
+            // Default Shopee = SPX (Shopee Express)
             return 'SPX';
         }
         // J&T Cargo (FastTrack) — cek dulu sebelum J&T Express
