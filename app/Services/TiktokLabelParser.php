@@ -329,12 +329,35 @@ class TiktokLabelParser
             : '/^(Pengirim|Weight|Ship|Jumlah|JL\s*\.|Order\s*Id|In transit|Product\s*Name|Qty\s*Total|Seller\s*Note|Syarat\s+dan\s+ketentuan)\b/i';
 
         foreach ($lines as $line) {
-            // --- Shopee sering punya "Penerima: X Pengirim: Y" di satu baris.
+            // --- Shopee sering punya "Penerima: X Pengirim: Y" di satu baris
+            //     (atau terbalik: "Pengirim: Y Penerima: X" tergantung cara
+            //     PDF extractor membaca layout 2-kolom).
             //     Tangani keduanya sekaligus kalau ketemu pola ini.
             if ($marketplace === 'shopee'
                 && preg_match('/^Penerima\s*[:\-]\s*(.*?)\s+Pengirim\s*[:\-]\s*(.+)$/i', $line, $m)) {
                 $buyerName = trim($m[1]) ?: null;
-                $senderName = trim($m[2]) ?: null;
+                // Strip nomor HP dari sender_name jika muncul setelah nama pengirim
+                $senderRaw = trim($m[2]);
+                if (preg_match('/^(.+?)\s+(\d{10,15})$/', $senderRaw, $sp)) {
+                    $senderName = trim($sp[1]) ?: null;
+                } else {
+                    $senderName = $senderRaw ?: null;
+                }
+                $mode = 'address';
+                continue;
+            }
+
+            // --- Shopee: urutan terbalik "Pengirim: Y Penerima: X" (PDF extractor
+            //     membaca kolom kanan duluan pada layout 2-kolom label SPX).
+            if ($marketplace === 'shopee'
+                && preg_match('/^Pengirim\s*[:\-]\s*(.*?)\s+Penerima\s*[:\-]\s*(.+)$/i', $line, $m)) {
+                $senderRaw = trim($m[1]);
+                if (preg_match('/^(.+?)\s+(\d{10,15})$/', $senderRaw, $sp)) {
+                    $senderName = trim($sp[1]) ?: null;
+                } else {
+                    $senderName = $senderRaw ?: null;
+                }
+                $buyerName = trim($m[2]) ?: null;
                 $mode = 'address';
                 continue;
             }
@@ -431,6 +454,73 @@ class TiktokLabelParser
                     $mode = null;
                 }
                 continue;
+            }
+        }
+
+        // --- Shopee fallback: Jika sender_name masih null ATAU buyer_name
+        //     sama dengan sender_name (indikasi PDF parser salah assign kolom),
+        //     scan ulang teks untuk memperbaiki.
+        if ($marketplace === 'shopee') {
+            $needFallback = ($senderName === null);
+            // Juga trigger fallback jika buyer = sender (salah tangkap)
+            if (! $needFallback && $buyerName !== null && $senderName !== null
+                && mb_strtolower($buyerName) === mb_strtolower($senderName)) {
+                $needFallback = true;
+            }
+
+            if ($needFallback) {
+                $fullText = implode("\n", $lines);
+
+                // Coba extract sender dari "Pengirim:" di teks
+                if ($senderName === null && preg_match('/Pengirim\s*[:\-]\s*([^\n]+)/i', $fullText, $fm)) {
+                    $senderRaw = trim($fm[1]);
+                    if (preg_match('/^(.+?)\s+(\d{10,15})$/', $senderRaw, $sp)) {
+                        $senderName = trim($sp[1]) ?: null;
+                    } elseif (preg_match('/(\b\d{10,15}\b)/', $senderRaw, $sp)) {
+                        $senderName = trim(str_replace($sp[0], '', $senderRaw)) ?: null;
+                    } else {
+                        $senderName = $senderRaw ?: null;
+                    }
+                }
+
+                // Jika buyer_name sama dengan sender_name, berarti regex
+                // "Penerima:" salah tangkap data pengirim. Coba perbaiki buyer.
+                if ($buyerName !== null && $senderName !== null
+                    && mb_strtolower($buyerName) === mb_strtolower($senderName)) {
+                    // Cari semua occurrence "Penerima:" di teks — mungkin ada yang
+                    // punya nama berbeda dari sender.
+                    if (preg_match_all('/Penerima\s*[:\-]\s*([^\n]+)/i', $fullText, $allPm)) {
+                        $foundBuyer = null;
+                        foreach ($allPm[1] as $penerimaLine) {
+                            $penerimaLine = trim($penerimaLine);
+                            // Hapus "Pengirim:..." jika ada di baris yang sama
+                            $penerimaLine = preg_replace('/\s*Pengirim\s*[:\-].*$/i', '', $penerimaLine);
+                            $penerimaLine = trim($penerimaLine);
+                            // Strip HP
+                            if (preg_match('/^(.+?)\s+(\d{10,15})$/', $penerimaLine, $pp)) {
+                                $candidate = trim($pp[1]);
+                                if ($candidate !== '' && mb_strtolower($candidate) !== mb_strtolower($senderName)) {
+                                    $foundBuyer = $candidate;
+                                    $buyerPhone = $buyerPhone ?: trim($pp[2]);
+                                    break;
+                                }
+                            } elseif ($penerimaLine !== '' && mb_strtolower($penerimaLine) !== mb_strtolower($senderName)) {
+                                $foundBuyer = $penerimaLine;
+                                break;
+                            }
+                        }
+
+                        if ($foundBuyer !== null) {
+                            $buyerName = $foundBuyer;
+                        } else {
+                            // Nama penerima asli tidak ada di teks — set null
+                            // supaya tidak menampilkan nama pengirim sebagai penerima.
+                            $buyerName = null;
+                        }
+                    } else {
+                        $buyerName = null;
+                    }
+                }
             }
         }
 
