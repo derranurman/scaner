@@ -239,6 +239,29 @@ class TiktokLabelParser
         return $a.' | '.$b;
     }
 
+    /**
+     * Bersihkan separator yang nyangkut di nama hasil ekstraksi
+     * "Penerima:" / "Pengirim:". Contoh kasus typical pada label SPX baru:
+     *
+     *   "Ranco Autoshop · 6282240057978"
+     *     -> regex extract phone -> sisa "Ranco Autoshop ·"
+     *     -> stripNameSeparators() -> "Ranco Autoshop"
+     *
+     * Dibuat tolerant terhadap bullet (·, •), pipe (|), dot/koma di ujung,
+     * dash, colon — semua bisa muncul sebagai pemisah nama-vs-nomor pada
+     * berbagai variasi layout label.
+     */
+    private function stripNameSeparators(?string $name): ?string
+    {
+        if ($name === null) {
+            return null;
+        }
+        $cleaned = preg_replace('/^[\s\-:|·•,\.]+|[\s\-:|·•,\.]+$/u', '', $name);
+        $cleaned = is_string($cleaned) ? trim($cleaned) : '';
+
+        return $cleaned !== '' ? $cleaned : null;
+    }
+
     private function cleanText(string $text): string
     {
         $text = str_replace(["\r\n", "\r"], "\n", $text);
@@ -361,6 +384,8 @@ class TiktokLabelParser
                 } else {
                     $senderName = $senderRaw ?: null;
                 }
+                $buyerName = $this->stripNameSeparators($buyerName);
+                $senderName = $this->stripNameSeparators($senderName);
                 $mode = 'address';
                 continue;
             }
@@ -376,6 +401,8 @@ class TiktokLabelParser
                     $senderName = $senderRaw ?: null;
                 }
                 $buyerName = trim($m[2]) ?: null;
+                $buyerName = $this->stripNameSeparators($buyerName);
+                $senderName = $this->stripNameSeparators($senderName);
                 $mode = 'address';
                 continue;
             }
@@ -390,6 +417,7 @@ class TiktokLabelParser
                 } else {
                     $senderName = $rest ?: null;
                 }
+                $senderName = $this->stripNameSeparators($senderName);
                 continue;
             }
 
@@ -405,6 +433,7 @@ class TiktokLabelParser
                 } else {
                     $buyerName = $rest ?: null;
                 }
+                $buyerName = $this->stripNameSeparators($buyerName);
                 $mode = 'address';
                 continue;
             }
@@ -567,11 +596,18 @@ class TiktokLabelParser
 
             // (d) Heuristik: buyer_name terlihat seperti nama toko/bisnis tapi
             //     sender_name kosong → kemungkinan PDF parser salah assign kolom.
-            //     Pada label SPX Shopee, kolom kanan (Pengirim) berisi nama toko
-            //     dan nomor HP format internasional (62...). Kalau buyer_phone
-            //     adalah format internasional 13 digit & buyer_name "shop-like",
-            //     swap ke sender.
-            if ($senderName === null && $buyerName !== null) {
+            //     Pada label SPX Shopee LAMA (layout 2-kolom), kolom kanan
+            //     (Pengirim) berisi nama toko dan nomor HP format internasional
+            //     (62...). Kalau buyer_phone adalah format internasional 13 digit
+            //     & buyer_name "shop-like", swap ke sender.
+            //
+            //     PENTING: heuristik ini HANYA fire kalau ada bukti label
+            //     punya baris "Pengirim:" beneran (key-value, bukan section
+            //     header). Pada layout SPX BARU (English headers), "Pengirim"
+            //     muncul sebagai section header tanpa colon — di situ tidak
+            //     ada info pengirim sama sekali, jadi tidak boleh di-swap.
+            $hasPengirimKv = preg_match('/^Pengirim\s*[:\-]/im', $fullText) === 1;
+            if ($senderName === null && $buyerName !== null && $hasPengirimKv) {
                 $shopKeywords = '/\b(Shop|Store|Autoshop|Auto[- ]?shop|Toko|Official|Online|Mart|Shopee|Tokped|Tiktok|Olshop)\b/i';
                 $isShopLike = preg_match($shopKeywords, $buyerName) === 1;
                 $isIntlPhone = $buyerPhone !== null
@@ -1090,6 +1126,46 @@ class TiktokLabelParser
      */
     private function extractShopeeProductRows(string $text): array
     {
+        // (0) SPX layout BARU dengan English headers (single-product per label):
+        //
+        //   Product Name
+        //   <nama produk, bisa multi-line>
+        //   SKU
+        //   <sku atau "—" untuk kosong>
+        //   Seller Note
+        //   ...
+        //
+        //  Layout ini TIDAK punya header "Qty" dan TIDAK punya kolom variasi
+        //  (single product, qty=1 implisit). Ditangani duluan supaya tidak
+        //  jatuh ke fallback parser yang akan generate noise dari blok header.
+        //
+        //  Hanya fire kalau "Product Name" muncul sebagai header standalone
+        //  (di baris sendiri, diikuti newline) dan TIDAK ada "Qty" header
+        //  (yang menandakan layout lama dengan tabel multi-kolom).
+        if (! preg_match('/\bQty\s*\n/i', $text)
+            && preg_match(
+                '/^Product\s*Name\s*\n+(.+?)\n+(?:SKU\s*\n+(.+?)\n+)?(?:Seller\s*Note|Penerima\s*[:\-]|Order\s*ID\s*\n|\z)/ism',
+                $text,
+                $m
+            )
+        ) {
+            $name = trim((string) preg_replace('/\s+/', ' ', $m[1]));
+            $sku = isset($m[2]) ? trim($m[2]) : '';
+            // SKU "—" / "-" / "–" / "N/A" artinya kosong.
+            if (in_array($sku, ['—', '-', '–', 'N/A', 'NA', 'n/a', '', '–'], true)) {
+                $sku = '';
+            }
+            if ($name !== '' && mb_strlen($name) >= 3) {
+                return [[
+                    'product_name' => $name,
+                    'sku' => $sku !== '' ? $sku : null,
+                    'seller_sku' => null,
+                    'quantity' => 1,
+                    'raw_line' => $name,
+                ]];
+            }
+        }
+
         // (A) Anchor kuat: header tabel "Qty\n" → seller-note "Pesan:" / dll.
         //     Dipakai duluan karena No.Pesanan kadang diletakkan DI BAWAH Pesan.
         $block = null;
@@ -1558,25 +1634,71 @@ class TiktokLabelParser
 
     /**
      * Seller Note / Pesan.
+     *
+     * Tiga variasi yang ditangani:
+     *   - Shopee lama: "Pesan: <text>" (inline, separator colon/dash)
+     *   - SPX baru:    "Seller Note\n<text>" (newline-separated, English header)
+     *   - TikTok:      "Seller Note: <text>" (inline)
+     *
+     * Note yang isinya cuma kombinasi "(order_id) (resi)" / "(order_id)"
+     * dianggap noise dan di-null-kan.
      */
     private function extractSellerNote(string $text, string $marketplace): ?string
     {
         if ($marketplace === 'shopee') {
+            // Format Shopee lama: "Pesan: <text>"
             if (preg_match('/Pesan\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
                 $note = trim($m[1]);
-                // Skip kalau cuma "(orderid)" doang
-                if (preg_match('/^\([A-Z0-9]+\)\s*$/', $note)) {
-                    return null;
+                if (! $this->isJustIdNoise($note)) {
+                    return $note;
                 }
+            }
+
+            // Format SPX baru (English headers, newline-separated):
+            //   "Seller Note\n(260522425RTFB8) (SPXID069712933975)"
+            // Note yang cuma berisi (order_id)(resi) di-null-kan.
+            if (preg_match('/Seller\s*Note\s*\n+([^\n]+)/i', $text, $m)) {
+                $note = trim($m[1]);
+                if (! $this->isJustIdNoise($note)) {
+                    return $note;
+                }
+            }
+
+            return null;
+        }
+
+        // TikTok / Tokopedia: "Seller Note: <text>"
+        if (preg_match('/Seller\s*Note\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
+            $note = trim($m[1]);
+            if (! $this->isJustIdNoise($note)) {
                 return $note;
             }
         }
 
-        if (preg_match('/Seller\s*Note\s*[:\-]\s*([^\n]+)/i', $text, $m)) {
-            return trim($m[1]);
+        return null;
+    }
+
+    /**
+     * True kalau note hanya berisi kombinasi "(orderid)" / "(orderid) (resi)" —
+     * bukan pesan asli dari pembeli, cuma duplikasi metadata yang sudah
+     * tersimpan di field lain.
+     */
+    private function isJustIdNoise(string $note): bool
+    {
+        $note = trim($note);
+        if ($note === '') {
+            return true;
+        }
+        // "(XYZ123)" tunggal
+        if (preg_match('/^\(\s*[A-Z0-9]+\s*\)\s*$/i', $note)) {
+            return true;
+        }
+        // "(XYZ123) (ABC456)" — beberapa token kurung berisi ID alfanumerik
+        if (preg_match('/^(\s*\(\s*[A-Z0-9]+\s*\)\s*)+$/i', $note)) {
+            return true;
         }
 
-        return null;
+        return false;
     }
 
     /**
