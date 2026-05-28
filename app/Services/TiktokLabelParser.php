@@ -466,6 +466,10 @@ class TiktokLabelParser
                 if (preg_match('/^COD$/i', $line)) {
                     continue;
                 }
+                // Skip baris noise dari template label Shopee
+                if (preg_match('/^(CASHLESS|Penjual\s+tidak\s+perlu|tidak\s+perlu\s+bayar|bayar\s+ongkir|Kurir\s*$)/i', $line)) {
+                    continue;
+                }
 
                 $addressParts[] = $line;
                 if (count($addressParts) >= 4) {
@@ -482,26 +486,50 @@ class TiktokLabelParser
         //       c) buyer_name mengandung "Pengirim:" prefix → strip prefix
         //       d) buyer_name terlihat seperti nama toko (Shop/Store/Autoshop/dll)
         //          + tidak ada Pengirim valid → swap: ini sebenarnya sender
+        //       e) sender_name berisi noise dari template label (CASHLESS,
+        //          "Penjual tidak perlu bayar ongkir", dll) → null sender
+        //       f) buyer_name null, tapi address_parts pertama tampak seperti
+        //          nama orang → ambil sebagai buyer (kasus PDF parser interleave
+        //          kolom: nama Penerima sebenarnya muncul di awal blok alamat)
         if ($marketplace === 'shopee') {
             $fullText = implode("\n", $lines);
+
+            // (e) Reject sender_name yang berisi noise dari template label.
+            //     Pengirim regex bisa nyangkut text bukan nama (mis. "Penjual
+            //     tidak perlu bayar ongkir ke Kurir", "CASHLESS", etc.) ketika
+            //     PDF parser merge kolom secara salah.
+            $senderNoiseRegex = '/Penjual|bayar\s*ongkir|tidak\s*perlu|^CASHLESS$|^Kurir$|Kurir\s*CASHLESS|tidak\s*ada\s*biaya/i';
+            if ($senderName !== null && preg_match($senderNoiseRegex, $senderName)) {
+                $senderName = null;
+            }
 
             // (c) Strip "Pengirim:" prefix dari buyer_name jika nyangkut
             if ($buyerName !== null && preg_match('/^Pengirim\s*[:\-]\s*(.+)$/i', $buyerName, $cm)) {
                 $buyerName = trim($cm[1]) ?: null;
             }
 
-            // (a) Coba extract sender dari "Pengirim:" di teks jika belum ada
-            if ($senderName === null && preg_match('/Pengirim\s*[:\-]\s*([^\n]+)/i', $fullText, $fm)) {
-                $senderRaw = trim($fm[1]);
-                // Hapus "Penerima:..." jika ada di baris yang sama
-                $senderRaw = preg_replace('/\s*Penerima\s*[:\-].*$/i', '', $senderRaw);
-                $senderRaw = trim($senderRaw);
-                if (preg_match('/^(.+?)\s+(\d{10,15})$/', $senderRaw, $sp)) {
-                    $senderName = trim($sp[1]) ?: null;
-                } elseif (preg_match('/(\b\d{10,15}\b)/', $senderRaw, $sp)) {
-                    $senderName = trim(str_replace($sp[0], '', $senderRaw)) ?: null;
-                } else {
-                    $senderName = $senderRaw ?: null;
+            // (a) Coba extract sender dari "Pengirim:" di teks jika belum ada.
+            //     Iterasi semua match — pilih yang BUKAN noise (Penjual/CASHLESS/dll).
+            if ($senderName === null && preg_match_all('/Pengirim\s*[:\-]\s*([^\n]+)/i', $fullText, $allFm)) {
+                foreach ($allFm[1] as $rawSender) {
+                    $senderRaw = trim($rawSender);
+                    $senderRaw = preg_replace('/\s*Penerima\s*[:\-].*$/i', '', $senderRaw);
+                    $senderRaw = trim($senderRaw);
+                    if ($senderRaw === '' || preg_match($senderNoiseRegex, $senderRaw)) {
+                        continue;
+                    }
+                    if (preg_match('/^(.+?)\s+(\d{10,15})$/', $senderRaw, $sp)) {
+                        $candidateSender = trim($sp[1]) ?: null;
+                    } elseif (preg_match('/(\b\d{10,15}\b)/', $senderRaw, $sp)) {
+                        $candidateSender = trim(str_replace($sp[0], '', $senderRaw)) ?: null;
+                    } else {
+                        $candidateSender = $senderRaw ?: null;
+                    }
+                    // Validate again after stripping phone
+                    if ($candidateSender !== null && ! preg_match($senderNoiseRegex, $candidateSender)) {
+                        $senderName = $candidateSender;
+                        break;
+                    }
                 }
             }
 
@@ -557,6 +585,52 @@ class TiktokLabelParser
                     if ($isIntlPhone) {
                         $buyerPhone = null;
                     }
+                }
+            }
+
+            // (f) Kalau buyer_name masih null tapi address_parts pertama tampak
+            //     seperti nama orang (1-4 kata, tanpa keyword alamat) → ambil
+            //     sebagai buyer. Kasus typical: PDF parser interleave kolom
+            //     2-kolom sehingga "Penerima: <name>" yang seharusnya di kolom
+            //     kiri ter-extract sebagai bagian dari address block.
+            if ($buyerName === null && ! empty($addressParts)) {
+                $addressKeywords = '/\b(Jl\.?|Jalan|RT|RW|Gang|Gg\.?|Komplek|Perumahan|Blok|No\.?|Kel\.?|Kec\.?|Kota|Kabupaten|KAB|RT\.|RW\.|Dusun|Desa|Kelurahan|Kecamatan|BANTEN|JAWA|SUMATERA|SULAWESI|KALIMANTAN|PAPUA|BALI|NTT|NTB)\b|[,]/i';
+                $foundIdx = null;
+                foreach ($addressParts as $idx => $part) {
+                    $part = trim($part);
+                    if ($part === '') continue;
+                    // Bukan all-caps (city/region biasanya all caps)
+                    if ($part === mb_strtoupper($part)) continue;
+                    // Bukan address keywords
+                    if (preg_match($addressKeywords, $part)) continue;
+                    // Bukan noise
+                    if (preg_match($senderNoiseRegex, $part)) continue;
+                    // Length & word count check
+                    if (mb_strlen($part) > 35) continue;
+                    if (substr_count($part, ' ') > 3) continue;
+                    $foundIdx = $idx;
+                    break;
+                }
+                if ($foundIdx !== null) {
+                    $buyerName = trim($addressParts[$foundIdx]);
+                    array_splice($addressParts, $foundIdx, 1);
+                }
+            }
+
+            // (g) Bersihkan address_parts dari noise yang bocor dari kolom
+            //     pengirim (city all-caps yang BUKAN bagian alamat penerima).
+            //     Khusus untuk address part PERTAMA yang berupa "KOTA XXX" saja
+            //     (single-word city tanpa kontext alamat) — itu kemungkinan
+            //     city pengirim, bukan kota penerima. Skip kalau berikutnya
+            //     ada address part yang lebih natural.
+            if (! empty($addressParts) && count($addressParts) >= 2) {
+                $first = trim($addressParts[0]);
+                // First part = "KOTA <NAME>" all-caps + 1-3 kata, dan
+                // address selanjutnya tidak mengandung KOTA <NAME> yang sama
+                // (artinya kota itu bukan kota penerima).
+                if (preg_match('/^KOTA\s+[A-Z\s]+$/u', $first) === 1
+                    && ! preg_match('/'.preg_quote($first, '/').'/i', implode(' ', array_slice($addressParts, 1)))) {
+                    array_shift($addressParts);
                 }
             }
         }
@@ -705,8 +779,13 @@ class TiktokLabelParser
             if (preg_match('/J&T\s*Express|J\s*&\s*T/i', $text)) {
                 return 'JNT';
             }
-            // Default Shopee = SPX (Shopee Express)
-            return 'SPX';
+            // Fallback: kalau ada SPXID di teks → SPX (Shopee Express).
+            //   Selain itu = "Other" (kemungkinan Anteraja/JNE/SiCepat tapi
+            //   logo image-only, tidak di-extract sebagai text oleh PDF parser).
+            if (preg_match('/\bSPXID\d+|\bSPX\b|Shop\s*Express/i', $text)) {
+                return 'SPX';
+            }
+            return 'Other';
         }
         // J&T Cargo (FastTrack) — cek dulu sebelum J&T Express
         if (preg_match('/J&T\s*CARGO|J\s*&\s*T\s*CARGO|FastTrack/i', $text)) {
@@ -1079,10 +1158,11 @@ class TiktokLabelParser
             );
         }));
 
-        // 2. Split index yang nempel ke nama: "1Stir kayu..." -> ["1", "Stir kayu..."]
+        // 2. Split index yang nempel ke nama: "1Stir kayu..." atau "1 Stir kayu..."
+        //    -> ["1", "Stir kayu..."]
         $normalized = [];
         foreach ($lines as $line) {
-            if (preg_match('/^(\d{1,2})([A-Za-z].+)$/u', $line, $m)) {
+            if (preg_match('/^(\d{1,2})\s*([A-Za-z].+)$/u', $line, $m)) {
                 $normalized[] = $m[1];
                 $normalized[] = trim($m[2]);
             } else {
