@@ -57,8 +57,10 @@ class ProductReportController extends Controller
         }
 
         // Riwayat detail (paginate)
+        // Eager-load `order` supaya kolom "Resi" di Riwayat Pergerakan
+        // bisa diambil dari order.resi_number tanpa N+1.
         $movements = StockMovement::query()
-            ->with(['variant.product', 'user'])
+            ->with(['variant.product', 'user', 'order'])
             ->whereBetween('stock_movements.created_at', [$from, $to])
             ->when($productId, fn ($q) => $q->whereHas('variant', fn ($sub) => $sub->where('product_id', $productId)))
             ->when($type, fn ($q) => $q->where('type', $type))
