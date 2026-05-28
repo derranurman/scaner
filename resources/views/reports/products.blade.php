@@ -90,12 +90,12 @@
                 <thead class="text-left text-xs uppercase text-gray-500 border-b">
                     <tr>
                         <th class="py-2">Waktu</th>
-                        <th class="py-2">Tipe</th>
+                        <th class="py-2">Resi</th>
                         <th class="py-2">Produk &mdash; Varian</th>
-                        <th class="py-2">User</th>
-                        <th class="py-2">Referensi</th>
                         <th class="py-2 text-right">Qty</th>
+                        <th class="py-2">Tipe</th>
                         <th class="py-2 text-right">Stok Setelah</th>
+                        <th class="py-2">User</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y">
@@ -106,11 +106,14 @@
                     <?php else: ?>
                         <?php foreach ($movements as $m): ?>
                             <?php
+                                // Tipe: rename ke "Stok Masuk" / "Stok Keluar" /
+                                // "Penyesuaian" supaya konsisten dengan istilah
+                                // user. Badge color dipertahankan.
                                 $mType = $m->type;
                                 if ($mType === 'in') {
-                                    $typeBadge = ['Masuk', 'bg-green-100 text-green-700'];
+                                    $typeBadge = ['Stok Masuk', 'bg-green-100 text-green-700'];
                                 } elseif ($mType === 'out') {
-                                    $typeBadge = ['Keluar', 'bg-red-100 text-red-700'];
+                                    $typeBadge = ['Stok Keluar', 'bg-red-100 text-red-700'];
                                 } else {
                                     $typeBadge = ['Penyesuaian', 'bg-gray-100 text-gray-600'];
                                 }
@@ -121,22 +124,28 @@
                                 $variantName = $m->variant?->name ?? '';
                                 $variantSku = $m->variant?->sku ?? '';
                                 $userName = $m->user?->name ?? '—';
+                                // Resi: prefer dari order yang ter-link
+                                // (movement dari Scan/Return), fallback ke
+                                // string `reference` (Stock-In / Adjustment
+                                // tidak punya order tapi punya catatan /
+                                // nomor referensi manual).
+                                $resi = $m->order?->resi_number ?: $m->reference;
                             ?>
                             <tr>
                                 <td class="py-2 text-xs whitespace-nowrap">{{ $m->created_at->format('d M Y H:i') }}</td>
-                                <td class="py-2">
-                                    <span class="badge {{ $typeBadge[1] }}">{{ $typeBadge[0] }}</span>
-                                </td>
+                                <td class="py-2 text-xs font-mono">{{ $resi ?: '—' }}</td>
                                 <td class="py-2">
                                     <div class="font-medium">{{ $productName }}</div>
                                     <div class="text-xs text-gray-500">{{ $variantName }} <span class="font-mono">{{ $variantSku }}</span></div>
                                 </td>
-                                <td class="py-2 text-xs">{{ $userName }}</td>
-                                <td class="py-2 text-xs text-gray-600">{{ $m->reference ?? '—' }}</td>
                                 <td class="py-2 text-right font-semibold {{ $qtyClass }}">
                                     {{ $qtyPrefix }}{{ number_format($qty) }}
                                 </td>
+                                <td class="py-2">
+                                    <span class="badge {{ $typeBadge[1] }}">{{ $typeBadge[0] }}</span>
+                                </td>
                                 <td class="py-2 text-right">{{ number_format((int) $m->stock_after) }}</td>
+                                <td class="py-2 text-xs">{{ $userName }}</td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
