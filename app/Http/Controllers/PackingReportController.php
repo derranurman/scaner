@@ -140,6 +140,53 @@ class PackingReportController extends Controller
     }
 
     /**
+     * Export PDF mengikuti tampilan layar (Ringkasan + Detail Scan).
+     * Implementasi pakai print-friendly Blade view yang otomatis memanggil
+     * `window.print()` saat dimuat, sehingga user bisa "Save as PDF" dari
+     * dialog cetak browser tanpa perlu library tambahan.
+     */
+    public function exportPdf(Request $request): View
+    {
+        [$from, $to, $userId, $type] = $this->filters($request);
+
+        $logQuery = PackingLog::with(['user', 'order.items.variant.product'])
+            ->whereBetween('scanned_at', [$from, $to])
+            ->when($userId, fn ($q) => $q->where('user_id', $userId))
+            ->when($type, fn ($q) => $q->whereHas(
+                'order.items.variant.product',
+                fn ($qq) => $qq->where('type', $type)
+            ));
+
+        $logs = (clone $logQuery)->orderBy('scanned_at')->get();
+
+        if ($type) {
+            $summary = $this->summaryByType((clone $logQuery)->get(), $type);
+        } else {
+            $summary = PackingLog::selectRaw('user_id, COUNT(*) as total_orders, SUM(total_items) as total_items, SUM(distinct_skus) as total_distinct')
+                ->with('user:id,name')
+                ->whereBetween('scanned_at', [$from, $to])
+                ->when($userId, fn ($q) => $q->where('user_id', $userId))
+                ->groupBy('user_id')
+                ->orderByDesc('total_items')
+                ->get();
+        }
+
+        $userName = null;
+        if ($userId) {
+            $userName = User::whereKey($userId)->value('name');
+        }
+
+        return view('reports.packing_pdf', [
+            'summary' => $summary,
+            'logs' => $logs,
+            'from' => $from,
+            'to' => $to,
+            'type' => $type,
+            'userName' => $userName,
+        ]);
+    }
+
+    /**
      * Bangun ringkasan per-user dari koleksi log yang sudah diambil.
      * Menghitung HANYA item dengan product.type yang dipilih.
      *

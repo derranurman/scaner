@@ -37,8 +37,9 @@
                 <button class="btn-primary flex-1" type="submit">Filter</button>
                 <a href="{{ route('reports.packing') }}" class="btn-secondary">Reset</a>
             </div>
-            <div>
-                <a href="{{ route('reports.packing.export', request()->query()) }}" class="btn-secondary w-full text-center">Export CSV</a>
+            <div class="flex gap-2">
+                <a href="{{ route('reports.packing.export', request()->query()) }}" class="btn-secondary flex-1 text-center">Export CSV</a>
+                <a href="{{ route('reports.packing.export_pdf', request()->query()) }}" target="_blank" rel="noopener" class="btn-secondary flex-1 text-center">Export PDF</a>
             </div>
         </form>
         @if ($type)

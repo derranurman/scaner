@@ -31,7 +31,7 @@ class UserController extends Controller
             'email' => ['required', 'email', 'unique:users,email'],
             'role' => ['required', 'in:admin,packing'],
             'is_active' => ['nullable', 'boolean'],
-            'password' => ['required', Password::min(6)],
+            'password' => ['required', Password::min(3)],
             'image' => ['nullable', 'image', 'max:2048'],
         ]);
 
@@ -61,7 +61,7 @@ class UserController extends Controller
             'email' => ['required', 'email', 'unique:users,email,'.$user->id],
             'role' => ['required', 'in:admin,packing'],
             'is_active' => ['nullable', 'boolean'],
-            'password' => ['nullable', Password::min(6)],
+            'password' => ['nullable', Password::min(3)],
             'image' => ['nullable', 'image', 'max:2048'],
             'remove_image' => ['nullable', 'boolean'],
         ]);
