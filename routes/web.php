@@ -46,6 +46,7 @@ Route::middleware('auth')->group(function () {
         // Laporan packing — bisa diakses oleh user packing juga (bukan admin only)
         Route::get('reports/packing', [PackingReportController::class, 'index'])->name('reports.packing');
         Route::get('reports/packing/export', [PackingReportController::class, 'export'])->name('reports.packing.export');
+        Route::get('reports/packing/export-pdf', [PackingReportController::class, 'exportPdf'])->name('reports.packing.export_pdf');
     });
 
     // Admin only
